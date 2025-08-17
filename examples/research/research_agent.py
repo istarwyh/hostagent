@@ -1,21 +1,26 @@
 import os
 from typing import Literal
+import asyncio
 
+from deepagents.util.run_interactive_session import run_interactive_session
 from tavily import TavilyClient
-
-
 from deepagents import create_deep_agent, SubAgent
+from langchain_core.tools import tool
+from deepagents.util.env_utils import load_and_validate_env
+
+load_and_validate_env()
  
 # It's best practice to initialize the client once and reuse it.
 tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
 
 # Search tool to use to do research
+@tool
 def internet_search(
     query: str,
     max_results: int = 5,
     topic: Literal["general", "news", "finance"] = "general",
     include_raw_content: bool = False,
-):
+) -> dict:
     """Run a web search"""
     search_docs = tavily_client.search(
         query,
@@ -158,9 +163,19 @@ You have access to a few tools.
 Use this to run an internet search for a given query. You can specify the number of results, the topic, and whether raw content should be included.
 """
 
-# Create the agent
-agent = create_deep_agent(
-    [internet_search],
-    research_instructions,
-    subagents=[critique_sub_agent, research_sub_agent],
-).with_config({"recursion_limit": 1000})
+
+def _builder_with_example_tools(tools, instructions, model, subagents):
+    merged_tools = [internet_search,*tools]
+    return create_deep_agent(merged_tools, instructions, model, subagents)
+
+
+async def main():
+    await run_interactive_session(
+        "research-agent",
+        _builder_with_example_tools,
+        research_instructions,
+        [critique_sub_agent, research_sub_agent],
+    )
+
+if __name__ == "__main__":
+    asyncio.run(main())
