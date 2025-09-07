@@ -10,7 +10,6 @@ def get_default_model():
 
 def get_anthropic_model():
     model_name = from_env(["ANTHROPIC_MODEL_NAME"], default="claude-sonnet-4-20250514")
-    print(model_name)
     return ChatAnthropic(model_name=model_name, max_tokens=64000)
 
 def get_openai_model():
@@ -18,5 +17,4 @@ def get_openai_model():
         ["OPENAI_MODEL_NAME", "OPENAI_MODEL", "OPENAI_CHAT_MODEL"],
         default="gpt-4o-mini",
     )
-    print(model_name)
     return ChatOpenAI(model=model_name)

@@ -50,15 +50,15 @@ def _get_mcp_server_configs(agent_id: str) -> Dict[str, Any]:
             "args":["-y","@xiaohui-wang/mcpadvisor"],
             "env":{}
         },
-        "tavily": {
-            "transport":"stdio",
-            "command": "npx",
-            "args": [
-                "-y",
-                "tavily-mcp@0.2.3"
-            ],
-            "env": {
-                "TAVILY_API_KEY": from_env("TAVILY_API_KEY")
-            }
-        }
+        # "tavily": {
+        #     "transport":"stdio",
+        #     "command": "npx",
+        #     "args": [
+        #         "-y",
+        #         "tavily-mcp@0.2.3"
+        #     ],
+        #     "env": { 
+        #         "TAVILY_API_KEY": from_env("TAVILY_API_KEY")
+        #     }
+        # }
     }
