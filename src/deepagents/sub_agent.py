@@ -1,5 +1,4 @@
-from langchain.schema import BaseMessage
-from deepagents.prompts import TASK_DESCRIPTION_PREFIX, TASK_DESCRIPTION_SUFFIX
+from deepagents.prompts import TASK_TOOL_DESCRIPTION
 from deepagents.state import DeepAgentState
 from langgraph.prebuilt import create_react_agent
 from langchain_core.tools import BaseTool
@@ -10,6 +9,7 @@ from langchain_core.language_models import LanguageModelLike
 from langchain.chat_models import init_chat_model
 from typing import Annotated, NotRequired, Any, Union, Optional, Callable
 from langgraph.types import Command
+from langchain_core.runnables import Runnable
 
 from langgraph.prebuilt import InjectedState
 from langgraph.config import get_config
@@ -24,10 +24,28 @@ class SubAgent(TypedDict):
     model: NotRequired[Union[LanguageModelLike, dict[str, Any]]]
 
 
-def _get_agents(tools, instructions, subagents: list[SubAgent], model, state_schema, post_model_hook: Optional[Callable] = None):
+class CustomSubAgent(TypedDict):
+    name: str
+    description: str
+    graph: Runnable
+
+
+def _get_agents(
+    tools,
+    instructions,
+    subagents: list[SubAgent | CustomSubAgent],
+    model,
+    state_schema,
+    post_model_hook: Optional[Callable] = None,
+):
     agents = {
         "general-purpose": create_react_agent(
-            model, prompt=instructions, tools=tools, checkpointer=False, post_model_hook=post_model_hook
+            model,
+            prompt=instructions,
+            tools=tools,
+            checkpointer=False,
+            post_model_hook=post_model_hook,
+            state_schema=state_schema,
         )
     }
     tools_by_name = {}
@@ -36,6 +54,9 @@ def _get_agents(tools, instructions, subagents: list[SubAgent], model, state_sch
             tool_ = tool(tool_)
         tools_by_name[tool_.name] = tool_
     for _agent in subagents:
+        if "graph" in _agent:
+            agents[_agent["name"]] = _agent["graph"]
+            continue
         if "tools" in _agent:
             _tools = [tools_by_name[t] for t in _agent["tools"]]
         else:
@@ -63,19 +84,25 @@ def _get_agents(tools, instructions, subagents: list[SubAgent], model, state_sch
     return agents
 
 
-def _get_subagent_description(subagents):
+def _get_subagent_description(subagents: list[SubAgent | CustomSubAgent]):
     return [f"- {_agent['name']}: {_agent['description']}" for _agent in subagents]
 
 
 def _create_task_tool(
-    tools, instructions, subagents: list[SubAgent], model, state_schema, post_model_hook: Optional[Callable] = None
+    tools,
+    instructions,
+    subagents: list[SubAgent | CustomSubAgent],
+    model,
+    state_schema,
+    post_model_hook: Optional[Callable] = None,
 ):
-    agents = _get_agents(tools, instructions, subagents, model, state_schema, post_model_hook)
+    agents = _get_agents(
+        tools, instructions, subagents, model, state_schema, post_model_hook
+    )
     other_agents_string = _get_subagent_description(subagents)
 
     @tool(
-        description=TASK_DESCRIPTION_PREFIX.format(other_agents=other_agents_string)
-        + TASK_DESCRIPTION_SUFFIX
+        description=TASK_TOOL_DESCRIPTION.format(other_agents=other_agents_string)
     )
     async def task(
         description: str,
@@ -103,14 +130,20 @@ def _create_task_tool(
 
 
 def _create_sync_task_tool(
-    tools, instructions, subagents: list[SubAgent], model, state_schema, post_model_hook: Optional[Callable] = None
+    tools,
+    instructions,
+    subagents: list[SubAgent | CustomSubAgent],
+    model,
+    state_schema,
+    post_model_hook: Optional[Callable] = None,
 ):
-    agents = _get_agents(tools, instructions, subagents, model, state_schema, post_model_hook)
+    agents = _get_agents(
+        tools, instructions, subagents, model, state_schema, post_model_hook
+    )
     other_agents_string = _get_subagent_description(subagents)
 
     @tool(
-        description=TASK_DESCRIPTION_PREFIX.format(other_agents=other_agents_string)
-        + TASK_DESCRIPTION_SUFFIX
+        description=TASK_TOOL_DESCRIPTION.format(other_agents=other_agents_string)
     )
     def task(
         description: str,
