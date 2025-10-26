@@ -5,7 +5,7 @@ import logging
 from dotenv import load_dotenv
 
 from tavily import TavilyClient
-from deepagents.graph import create_deep_agent
+from deepagents import create_deep_agent
 from langchain_core.tools import tool
 
 # Configure logging
@@ -170,8 +170,8 @@ Use this to run an internet search for a given query. You can specify the number
 # Create the agent
 logger.info("Creating deep agent...")
 agent = create_deep_agent(
-    [internet_search],
-    research_instructions,
+    tools=[internet_search],
+    instructions=research_instructions,
     subagents=[critique_sub_agent, research_sub_agent],
 ).with_config({"recursion_limit": 1000})
 logger.info("Deep agent created successfully")

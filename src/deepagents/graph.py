@@ -36,8 +36,6 @@ def _agent_builder(
 ):
     logger.info("_agent_builder called with model=%s", model)
     logger.info("Building agent with instructions: %s", instructions[:100])
-    print("Building agent with instructions", flush=True)
-    print(instructions[:100], flush=True)
     prompt = instructions + BASE_AGENT_PROMPT
 
     all_builtin_tools = [write_todos, write_file, read_file, ls, edit_file]
