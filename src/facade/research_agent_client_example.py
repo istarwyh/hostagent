@@ -48,10 +48,10 @@ class ResearchAgentClient:
         """
         async with httpx.AsyncClient(trust_env=False) as client:
             async with client.stream(
-                "POST",
-                f"{self.base_url}/research/stream",
-                json={"query": query, "thread_id": thread_id},
-                timeout=300.0
+                    "POST",
+                    f"{self.base_url}/research/stream",
+                    json={"query": query, "thread_id": thread_id},
+                    timeout=300.0
             ) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
@@ -76,10 +76,10 @@ class ResearchAgentClient:
         """
         async with httpx.AsyncClient(trust_env=False) as client:
             async with client.stream(
-                "POST",
-                f"{self.base_url}/research/stream-updates",
-                json={"query": query, "thread_id": thread_id},
-                timeout=300.0
+                    "POST",
+                    f"{self.base_url}/research/stream-updates",
+                    json={"query": query, "thread_id": thread_id},
+                    timeout=300.0
             ) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
@@ -137,8 +137,8 @@ async def example_streaming():
     client = ResearchAgentClient()
 
     async for event in client.stream_events(
-        query="你好，我是晓灰！",
-        thread_id="example-thread-2"
+            query="你好，使用  HTML  设计一张海报解释如履薄冰",
+            thread_id="example-thread-2"
     ):
         if event["event"] == "done":
             print("Stream completed!")
@@ -156,8 +156,8 @@ async def example_state_updates():
     client = ResearchAgentClient()
 
     async for update in client.stream_updates(
-        query="你好，我是晓灰！",
-        thread_id="example-thread-3"
+            query="你好，我是晓灰！",
+            thread_id="example-thread-3"
     ):
         if update["event"] == "done":
             print("Updates completed!")
@@ -174,8 +174,8 @@ async def example_get_state():
     print("\n=== Get State Example ===")
     client = ResearchAgentClient()
 
-    state = await client.get_state(thread_id="example-thread-1")
-    print(f"State: {json.dumps(state, indent=2, default=str)}")
+    state = await client.get_state(thread_id="example-thread-2")
+    print(f"State: {json.dumps(state, indent=2, default=str, ensure_ascii=False)})")
 
 
 async def example_health_check():
@@ -191,9 +191,9 @@ async def main():
     """Run all examples."""
     try:
         await example_health_check()
-        await example_sync_invocation()
+        # await example_sync_invocation()
         await example_streaming()
-        await example_state_updates()
+        # await example_state_updates()
         await example_get_state()
     except Exception as e:
         print(f"Error: {e}")

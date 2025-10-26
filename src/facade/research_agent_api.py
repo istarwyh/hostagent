@@ -129,7 +129,7 @@ async def stream_research(request: ResearchRequest):
                     "data": event.get("data", {}),
                     "thread_id": thread_id
                 }
-                yield f"data: {json.dumps(event_data)}\n\n"
+                yield f"data: {json.dumps(event_data, default=str)}\n\n"
 
             # Send completion event
             yield f"data: {json.dumps({'event': 'done', 'thread_id': thread_id})}\n\n"
