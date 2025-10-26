@@ -208,3 +208,7 @@ __marimo__/
 
 # LangGraph
 .langgraph_api
+/src/test/test_env_connectivity.py
+
+#IDE
+.idea

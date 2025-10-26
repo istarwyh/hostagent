@@ -1,19 +1,20 @@
 import os
 from typing import Literal
-import asyncio
+import logging
 
-from deepagents.util.run_interactive_session import run_interactive_session
+from dotenv import load_dotenv
+
 from tavily import TavilyClient
-from deepagents import create_deep_agent, SubAgent
+from deepagents import create_deep_agent
 from langchain_core.tools import tool
-from deepagents.util.env_utils import load_and_validate_env
 
-load_and_validate_env()
- 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+load_dotenv()
 
 # It's best practice to initialize the client once and reuse it.
 tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
-
 
 # Search tool to use to do research
 @tool
@@ -166,18 +167,11 @@ Use this to run an internet search for a given query. You can specify the number
 """
 
 
-def _builder_with_example_tools(tools, instructions, model, subagents):
-    merged_tools = [internet_search,*tools]
-    return create_deep_agent(merged_tools, instructions, model, subagents)
-
-
-async def main():
-    await run_interactive_session(
-        "research-agent",
-        _builder_with_example_tools,
-        research_instructions,
-        [critique_sub_agent, research_sub_agent],
-    )
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# Create the agent
+logger.info("Creating deep agent...")
+agent = create_deep_agent(
+    [internet_search],
+    research_instructions,
+    subagents=[critique_sub_agent, research_sub_agent],
+).with_config({"recursion_limit": 1000})
+logger.info("Deep agent created successfully")

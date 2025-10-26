@@ -14,10 +14,11 @@ from deepagents.interrupt import create_interrupt_hook, ToolInterruptConfig
 from langgraph.types import Checkpointer
 from langgraph.prebuilt import create_react_agent
 from deepagents.prompts import BASE_AGENT_PROMPT
+import logging
 
 StateSchema = TypeVar("StateSchema", bound=DeepAgentState)
 StateSchemaType = Type[StateSchema]
-
+logger = logging.getLogger(__name__)
 
 def _agent_builder(
     tools: Sequence[Union[BaseTool, Callable, dict[str, Any]]],
@@ -33,6 +34,10 @@ def _agent_builder(
     main_agent_tools: Optional[list[str]] = None,
     is_async: bool = False,
 ):
+    logger.info("_agent_builder called with model=%s", model)
+    logger.info("Building agent with instructions: %s", instructions[:100])
+    print("Building agent with instructions", flush=True)
+    print(instructions[:100], flush=True)
     prompt = instructions + BASE_AGENT_PROMPT
 
     all_builtin_tools = [write_todos, write_file, read_file, ls, edit_file]
@@ -49,6 +54,7 @@ def _agent_builder(
         built_in_tools = all_builtin_tools
 
     if model is None:
+        logger.info("No model specified, using default model")
         model = get_default_model()
     state_schema = state_schema or DeepAgentState
 
