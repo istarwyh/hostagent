@@ -11,6 +11,7 @@ from typing import Sequence, Union, Callable, Any, TypeVar, Type, Optional
 from langchain_core.tools import BaseTool, tool
 from langchain_core.language_models import LanguageModelLike
 from deepagents.interrupt import create_interrupt_hook, ToolInterruptConfig
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Checkpointer
 from langgraph.prebuilt import create_react_agent
 from deepagents.prompts import BASE_AGENT_PROMPT
@@ -97,6 +98,9 @@ def _agent_builder(
     else:
         passed_in_tools = list(tools)
     all_tools = built_in_tools + passed_in_tools + [task_tool]
+
+    if not checkpointer:
+        checkpointer = MemorySaver()
 
     return create_react_agent(
         model,

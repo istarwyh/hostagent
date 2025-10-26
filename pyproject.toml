@@ -12,7 +12,10 @@ dependencies = [
     "langchain-mcp-adapters>=0.1.9",
     "langchain-openai>=0.1.0",
     "openai>=1.0.0",
-    "pytest"
+    "pytest",
+    "redis",
+    "fastapi",
+    "uvicorn"
 ]
 
 
