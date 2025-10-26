@@ -5,7 +5,7 @@ import logging
 from dotenv import load_dotenv
 
 from tavily import TavilyClient
-from deepagents import create_deep_agent
+from deepagents.graph import create_deep_agent
 from langchain_core.tools import tool
 
 # Configure logging
