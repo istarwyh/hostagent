@@ -61,12 +61,15 @@ Configure the UI at http://localhost:3000 with:
 # Navigate to backend directory
 cd backend
 
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate  # On macOS/Linux
+# Install dependencies using uv (recommended)
+uv venv  # Create virtual environment
+source .venv/bin/activate  # On macOS/Linux (optional with uv)
+uv pip install -e ".[dev]"  # Install all dependencies including dev tools
 
-# Install dependencies
-pip install -e .
+# Alternative: using standard pip
+# python3 -m venv .venv
+# source .venv/bin/activate
+# pip install -e .
 ```
 
 ## 开发原则

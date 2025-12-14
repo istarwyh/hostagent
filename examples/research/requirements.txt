@@ -3,4 +3,4 @@ tavily-python
 python-dotenv
 langchain-mcp-adapters
 langchain-openai
--e ../..
+-e ../../backend

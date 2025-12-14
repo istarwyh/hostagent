@@ -367,39 +367,98 @@ async def stream_run(thread_id: str, request: RunStreamRequest):
 
 ### 6.3 /threads/{id}/history 实现
 
-从 checkpointer 读取历史，并处理"同一 step 多变体"的情况：
+从 checkpointer 读取历史，并处理"同一 step 多变体"的情况，同时 **返回结构严格对齐 SDK 的 `ThreadState[]`**：
 
 ```python
 @router.api_route("/{thread_id}/history", methods=["GET", "POST"])
-async def get_thread_history(thread_id: str, limit: int = 10):
+async def get_thread_history(thread_id: str, request: Optional[ThreadHistoryRequest] = None):
+    """返回 ThreadState 列表，供 @langchain/langgraph-sdk 使用。"""
+
+    limit = request.limit if request else 10
+
     tuples = list(
-        checkpointer.list({"configurable": {"thread_id": thread_id}}, limit=limit)
+        checkpointer.list(
+            {"configurable": {"thread_id": thread_id}},
+            limit=limit * 2,  # 多取一些，便于按 step 分组后筛选
+        )
     )
     if not tuples:
-        raise HTTPException(status_code=404, detail="Thread not found")
+        return []
 
     # 按 step 分组，每个 step 只保留消息最完整的 checkpoint
-    grouped: Dict[int, List[CheckpointTuple]] = {}
+    grouped: dict[int, list] = {}
     for t in tuples:
-        step = getattr(t.metadata, "step", 0)
+        metadata = t.metadata or {}
+        step = (
+            getattr(metadata, "step", 0)
+            if hasattr(metadata, "step")
+            else metadata.get("step", 0)
+        )
         grouped.setdefault(step, []).append(t)
 
-    history = []
+    history: list[dict[str, Any]] = []
     for step in sorted(grouped.keys()):
         candidates = grouped[step]
-        # 选择 messages 最多的候选
-        best = max(candidates, key=lambda t: len(
-            _extract_values_from_checkpoint(t.checkpoint).get("messages", [])
-        ))
-        values = _extract_values_from_checkpoint(best.checkpoint)
-        history.append({
-            "checkpoint_id": best.checkpoint.get("id") or f"{thread_id}-{step}",
-            "values": values,
-            "metadata": {"thread_id": thread_id, "step": step},
-            "created_at": best.checkpoint.get("ts"),
-        })
+        # 选择 messages 最多的候选，保证 history 视图尽可能完整
+        best = max(
+            candidates,
+            key=lambda t: len(
+                _extract_values_from_checkpoint(t.checkpoint).get("messages", [])
+            ),
+        )
 
-    return history
+        # 1) values：从 checkpoint.channel_values 规范化提取
+        values = _extract_values_from_checkpoint(best.checkpoint)
+
+        # 2) checkpoint：对齐 SDK 的 Checkpoint 结构
+        config = (best.config or {}).get("configurable", {})
+        checkpoint = {
+            "thread_id": config.get("thread_id", thread_id),
+            "checkpoint_ns": config.get("checkpoint_ns", ""),
+            "checkpoint_id": config.get("checkpoint_id")
+            or best.checkpoint.get("id"),
+            "checkpoint_map": None,
+        }
+
+        # 3) parent_checkpoint：可选，当前方案中大多为 None
+        parent_config = getattr(best, "parent_config", None) or {}
+        parent_conf_cfg = (
+            parent_config.get("configurable") if isinstance(parent_config, dict) else None
+        )
+        if parent_conf_cfg:
+            parent_checkpoint = {
+                "thread_id": parent_conf_cfg.get("thread_id", thread_id),
+                "checkpoint_ns": parent_conf_cfg.get("checkpoint_ns", ""),
+                "checkpoint_id": parent_conf_cfg.get("checkpoint_id"),
+                "checkpoint_map": None,
+            }
+        else:
+            parent_checkpoint = None
+
+        # 4) metadata：保留原有元信息，并补充 thread_id / step
+        best_metadata = best.metadata or {}
+        if isinstance(best_metadata, dict):
+            metadata = {**best_metadata}
+        else:
+            metadata = {}
+        metadata.setdefault("thread_id", thread_id)
+        metadata.setdefault("step", step)
+
+        # 5) 组装 ThreadState
+        history.append(
+            {
+                "values": values,
+                "next": [],
+                "checkpoint": checkpoint,
+                "metadata": metadata,
+                "created_at": best.checkpoint.get("ts"),
+                "parent_checkpoint": parent_checkpoint,
+                "tasks": [],
+            }
+        )
+
+    # SDK 期望返回 ThreadState[]，这里直接返回列表
+    return history[:limit]
 ```
 
 ### 6.4 _extract_values_from_checkpoint 实现
@@ -1004,30 +1063,205 @@ test_agent = create_research_agent(tools, instructions, test_checkpointer)
 
 ---
 
-## 16. 总结
+## 16. SDK 契约与 E2E 测试清单
 
-### 16.1 核心要点
+本节补充说明：**后端实现必须严格对齐 `@langchain/langgraph-sdk` 的类型定义和调用行为**，并给出推荐的端到端测试用例，避免因协议理解偏差导致前后端集成问题。
+
+### 16.1 SDK 类型 → Pydantic 映射原则
+
+- 以 SDK 源码中的类型定义为 **单一真源**：
+  - `frontend/node_modules/@langchain/langgraph-sdk/dist/schema.d.ts(.cts)`
+  - `frontend/node_modules/@langchain/langgraph-sdk/dist/react/types.d.ts(.cts)`
+- 映射规则示例：
+  - `interface ThreadState<ValuesType>` → Pydantic 模型 / 或等价字典结构，字段必须齐全：
+    - `values: dict`
+    - `next: list[str]`
+    - `checkpoint: { thread_id, checkpoint_ns, checkpoint_id, checkpoint_map }`
+    - `metadata: dict`
+    - `created_at: Optional[str]`
+    - `parent_checkpoint: Optional[Checkpoint]`
+    - `tasks: list`
+  - 如暂时不在 Python 侧建完整 model，也必须保证 **返回 JSON 能被 SDK 的 [ThreadState](cci:2://file:///Users/mac/Desktop/code-open/hostagent/backend/src/model/thread.py:19:0-20:29) 类型接受**。
+
+### 16.2 Assistants 契约
+
+SDK 相关调用（来自 [client.js](cci:7://file:///Users/mac/Desktop/code-open/hostagent/frontend/node_modules/@langchain/langgraph-sdk/dist/client.js:0:0-0:0)）：
+
+- `client.assistants.search({ graphId, limit })`
+- `client.assistants.get(assistantId)`
+
+API 契约：
+
+- `POST /assistants/search`
+  - 请求体（示例）：
+    ```json
+    {
+      "graph_id": "researchAgent",
+      "limit": 100,
+      "metadata": { }
+    }
+    ```
+  - 响应：`Assistant[]`，字段对齐 SDK `schema.Assistant`：
+    - `assistant_id: str`
+    - `graph_id: str`
+    - `name: str`
+    - `config: dict`
+    - `metadata: { created_by: str, ... }`
+    - `created_at: str`
+    - `updated_at: str`
+    - `version: int`
+  - **业务约束**：
+    - 至少返回一个 `metadata.created_by === "system"` 的默认 assistant。
+    - 其 `graph_id` 必须与前端配置的 `assistantId` 一致（本项目为 `researchAgent`）。
+
+### 16.3 Threads 契约（State / History）
+
+SDK 相关调用：
+
+- `client.threads.getState(threadId, checkpoint?) -> Promise<ThreadState>`
+- `client.threads.getHistory(threadId, { limit, before, checkpoint, metadata }) -> Promise<ThreadState[]>`
+- React hook：`useStream` / `useThreadHistory` 内部会使用 [ThreadState[]](cci:2://file:///Users/mac/Desktop/code-open/hostagent/backend/src/model/thread.py:19:0-20:29) 来构建 `stream.history` / `branchTree`。
+
+API 契约：
+
+- `GET /threads/{id}/state`
+  - 返回单个 [ThreadState](cci:2://file:///Users/mac/Desktop/code-open/hostagent/backend/src/model/thread.py:19:0-20:29)：
+    ```json
+    {
+      "values": { "messages": [...], "todos": [...], "files": {"...": "..."} },
+      "next": [],
+      "checkpoint": {
+        "thread_id": "...",
+        "checkpoint_ns": "",
+        "checkpoint_id": "...",
+        "checkpoint_map": null
+      },
+      "metadata": { "thread_id": "...", "step": 1, ... },
+      "created_at": "2025-12-14T...",
+      "parent_checkpoint": null,
+      "tasks": []
+    }
+    ```
+
+- `POST /threads/{id}/history`
+  - 请求体：
+    ```json
+    {
+      "limit": 10,
+      "before": null,
+      "checkpoint": null,
+      "metadata": null
+    }
+    ```
+  - 响应：[ThreadState[]](cci:2://file:///Users/mac/Desktop/code-open/hostagent/backend/src/model/thread.py:19:0-20:29)（如上结构）。
+  - 重要细节：
+    - **必须返回完整 ThreadState 字段**，否则 `useStream.history` / 分支树构建会出现空视图甚至 UI 白屏。
+    - `checkpoint` / `parent_checkpoint` 来自 `CheckpointTuple.config.configurable` / `parent_config.configurable`，而非自定义结构。
+
+### 16.4 Runs / Streaming 契约
+
+SDK 相关调用：
+
+- `client.runs.stream(threadId, assistantId, payload)`
+- React `useStream` 通过此接口实现：
+  - `submit()` 发送消息
+  - `joinStream()` 重新连接已有 run
+
+API 契约：
+
+- `POST /threads/{thread_id}/runs/stream`
+  - 请求体（示例）：
+    ```json
+    {
+      "assistant_id": "researchAgent",
+      "input": {"messages": [{"role": "user", "content": "你好"}]},
+      "stream_mode": ["updates"],
+      "config": {"configurable": {"thread_id": "..."}}
+    }
+    ```
+  - 响应：SSE 流，事件类型需覆盖：`metadata` / `updates` / `values` / `messages` / `end` / `error`。
+
+### 16.5 推荐 E2E 测试用例
+
+为避免出现“后端 curl 看起来正常，但前端 UI 出现隐藏 bug”的情况，建议每次改动后至少执行以下端到端测试：
+
+#### 16.5.1 启动与健康检查
+
+- 启动后端（可以使用 `conf/start_dev.sh`）：
+  - `GET /ok` → `{"status": "ok"}`
+  - 日志中无未捕获异常。
+
+#### 16.5.2 Assistant 发现流程
+
+- 使用 SDK 或 curl 模拟前端行为：
+  - `POST /assistants/search`，body：`{"graph_id": "researchAgent", "limit": 100}`
+  - 断言：
+    - 返回列表长度 ≥ 1
+    - 存在 `metadata.created_by === "system"` 的 assistant
+    - 该 assistant 的 `graph_id === "researchAgent"`。
+
+#### 16.5.3 基础 Streaming 流程
+
+- 步骤：
+  1. `POST /threads` 创建线程，记录 `thread_id`。
+  2. `POST /threads/{thread_id}/runs/stream`，发送一条 `human` 消息。
+  3. 确认 SSE 中出现：`event: metadata` → `event: updates` → `event: end`。
+
+#### 16.5.4 History + UI 重建
+
+- 在前端开启 `fetchStateHistory: true`：
+  - 在 `useStream` 调用中显式设置：`fetchStateHistory: true`。
+- 操作步骤：
+  1. 在 UI 中新建线程并发送一条消息。
+  2. 等待流式输出结束。
+  3. 刷新页面 / 切换到其他线程再切回来。
+- 预期结果：
+  - 历史消息可以完整还原。
+  - 不会出现“流式结束后 UI 清空或白屏”的情况。
+  - 如有异常，优先检查 `/threads/{id}/history` 返回的每个元素是否是完整的 [ThreadState](cci:2://file:///Users/mac/Desktop/code-open/hostagent/backend/src/model/thread.py:19:0-20:29)。
+
+#### 16.5.5 回归检查：常见错误场景
+
+- **"No default assistant found"**：
+  - 在前端控制台或 Next 日志中出现此错误时，检查：
+    - `/assistants/search` 是否返回了 `metadata.created_by === "system"` 的记录。
+    - 返回的记录中 `graph_id` 是否与前端配置一致。
+
+- **"`fetchStateHistory` must be set to `true` to use `history`"**：
+  - 前端访问 `stream.history` / `experimental_branchTree` 时，如果没有开启 `fetchStateHistory` 会抛出此错误。
+  - 解决：在 `useStream` 选项中设置 `fetchStateHistory: true`。
+
+- **流结束后 UI 清空但无报错**：
+  - 重点排查：
+    - `/threads/{id}/history` 是否返回了空数组，或元素结构不是 [ThreadState](cci:2://file:///Users/mac/Desktop/code-open/hostagent/backend/src/model/thread.py:19:0-20:29)（缺失 `checkpoint` / `parent_checkpoint` 等字段）。
+    - SDK 的 `branchContext.flatHistory` 是否得到了预期长度的历史记录。
+
+通过以上契约说明和测试清单，可以在设计阶段就对齐前端 SDK 的期望，减少集成阶段“反复修 bug 才暴露协议不匹配”的情况。
+
+## 17. 总结
+
+### 17.1 核心要点
 
 1. **共享 Checkpointer**：Agent 和 API 必须使用同一个 checkpointer 实例
 2. **数据结构对齐**：API 返回的 `values.messages` 必须符合前端 SDK 的 `Message` 类型
 3. **SSE 协议**：流式响应必须遵循 `event: xxx\ndata: {...}\n\n` 格式
 4. **多形态处理**：checkpoint 内部结构可能有多种形态，需要统一处理
 
-### 16.2 分层架构要点
+### 17.2 分层架构要点
 
 1. **Facade** 只处理 HTTP，不包含业务逻辑
 2. **Service** 封装核心业务，定义 Agent 和工具
 3. **Repository** 管理数据持久化，支持存储后端切换
 4. **依赖方向**：上层依赖下层，避免循环依赖
 
-### 16.3 代码质量要点
+### 17.3 代码质量要点
 
 1. **日志**：使用 `setup_logger(__name__)`，关键操作记录 INFO，错误使用 `exc_info=True`
 2. **类型**：所有函数使用类型提示，Pydantic 验证请求
 3. **函数**：单一职责，不超过 30 行，避免硬编码
 4. **异常**：自定义异常类，结合日志记录
 
-### 16.4 实现步骤
+### 17.4 实现步骤
 
 1. 创建共享 checkpointer 模块（Repository 层）
 2. 定义 Agent 和业务逻辑（Service 层）
@@ -1035,7 +1269,7 @@ test_agent = create_research_agent(tools, instructions, test_checkpointer)
 4. 添加日志和异常处理
 5. 验证前端 SDK 连接
 
-### 16.5 适用场景
+### 17.5 适用场景
 
 - 希望自托管 LangGraph 服务
 - 已有 DeepAgent 实例，需要适配标准 UI

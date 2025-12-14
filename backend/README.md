@@ -28,10 +28,22 @@ backend/
 ### Prerequisites
 
 - Python 3.11 or higher
-- Virtual environment tool (venv)
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip
 
 ### Installation
 
+**Using uv (recommended)**:
+```bash
+# From the backend directory
+cd backend
+
+# Create virtual environment and install dependencies
+uv venv
+source .venv/bin/activate  # On macOS/Linux (optional with uv)
+uv pip install -e ".[dev]"  # Install all dependencies including dev tools
+```
+
+**Using pip (alternative)**:
 ```bash
 # From the backend directory
 cd backend
