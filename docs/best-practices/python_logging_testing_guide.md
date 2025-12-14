@@ -219,33 +219,33 @@ INFO:research_agent_api:Request received: query=测试查询
 ERROR:research_agent_api:Error in invoke_research: ...  # 如果有错误
 ```
 
-### 方式二：LangGraph 部署方式
+### 方式二：Backend API 方式
 
-使用 LangGraph CLI 运行：
+使用 LangGraph API 运行 backend 服务：
 
 ```bash
-# 1. 初始化环境
-cd examples/research
-./init_langgraph.sh
+# 1. 激活环境
+cd backend
 source .venv/bin/activate
 
-# 2. 启动 LangGraph 开发服务器
-langgraph dev
+# 2. 启动 LangGraph API 服务器
+uvicorn src.facade.langgraph_api.main:app --reload --port 2024
 ```
 
-LangGraph 日志输出：
+Backend API 日志输出：
 ```
-Starting LangGraph API server...
+INFO:     Uvicorn running on http://localhost:2024 (Press CTRL+C to quit)
+INFO:     Started reloader process [12345] using StatReload
 INFO:     Started server process [67890]
 INFO:     Waiting for application startup.
-INFO:deepagents.graph:_agent_builder called with model=gpt-4
-INFO:research_agent:Creating research agent...
-Ready. Listening on http://127.0.0.1:2024
+INFO:src.service.research_agent.research_agent:Creating research agent...
+INFO:src.facade.langgraph_api.main:LangGraph API initialized
+INFO:     Application startup complete.
 ```
 
-访问 LangGraph Studio UI 查看详细日志：
-- 打开 http://127.0.0.1:2024
-- 查看 Agent 执行流程和每个节点的日志
+访问 API 文档查看详细信息：
+- API: http://localhost:2024
+- API Docs: http://localhost:2024/docs
 
 ### 方式三：直接运行 Python 脚本
 

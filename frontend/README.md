@@ -46,51 +46,33 @@ The application will be available at [http://localhost:3000](http://localhost:30
 
 When you first open the application, you'll be prompted to configure:
 
-### For Local Development with the Research Agent Example
+### For Local Development
 
-1. **Start the LangGraph API** (see [Backend Setup](#backend-setup) below)
+1. **Start the Backend API** (see [Backend Setup](#backend-setup) below)
 2. **Configure in the UI**:
-   - **Deployment URL**: `http://127.0.0.1:2024`
+   - **Deployment URL**: `http://localhost:2024`
    - **Assistant ID**: `researchAgent`
    - **LangSmith API Key**: (optional) Your LangSmith API key
 
 ### Backend Setup
 
-To run the research agent locally:
+To run the backend API locally:
 
 ```bash
 # From the project root
-cd examples/research
+cd backend
 
-# Initialize the LangGraph environment (first time only)
-./init_langgraph.sh
-
-# Start the LangGraph server
+# Activate virtual environment
 source .venv/bin/activate
-langgraph dev
+
+# Start the LangGraph API server
+uvicorn src.facade.langgraph_api.main:app --reload --port 2024
 ```
 
-You will see output like:
+The backend API will be available at:
 
-```
-╦  ┌─┐┌┐┌┌─┐╔═╗┬─┐┌─┐┌─┐┬ ┬
-║  ├─┤││││ ┬║ ╦├┬┘├─┤├─┘├─┤
-╩═╝┴ ┴┘└┘└─┘╚═╝┴└─┴ ┴┴  ┴ ┴
-
-- 🚀 API: http://127.0.0.1:2024
-- 🎨 Studio UI: https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024
-- 📚 API Docs: http://127.0.0.1:2024/docs
-```
-
-The assistant ID is defined in `examples/research/langgraph.json`:
-
-```json
-{
-  "graphs": {
-    "researchAgent": "./research_agent.py:agent"
-  }
-}
-```
+- API: http://localhost:2024
+- API Docs: http://localhost:2024/docs
 
 **Open Deepagents UI** at [http://localhost:3000](http://localhost:3000) and configure it using the values above.
 

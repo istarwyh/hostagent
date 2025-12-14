@@ -7,21 +7,32 @@ from pydantic import BaseModel, Field
 
 
 class StreamMode(str, Enum):
-    """Stream mode options."""
+    """Stream mode options matching SDK StreamMode type."""
 
-    UPDATES = "updates"
     VALUES = "values"
     MESSAGES = "messages"
+    MESSAGES_TUPLE = "messages-tuple"
+    UPDATES = "updates"
+    EVENTS = "events"
     DEBUG = "debug"
+    TASKS = "tasks"
+    CHECKPOINTS = "checkpoints"
+    CUSTOM = "custom"
 
 
 class EventType(str, Enum):
-    """SSE event types."""
+    """SSE event types matching SDK stream event types."""
 
     METADATA = "metadata"
-    UPDATES = "updates"
     VALUES = "values"
     MESSAGES = "messages"
+    UPDATES = "updates"
+    EVENTS = "events"
+    DEBUG = "debug"
+    TASKS = "tasks"
+    CHECKPOINTS = "checkpoints"
+    CUSTOM = "custom"
+    FEEDBACK = "feedback"
     END = "end"
     ERROR = "error"
 

@@ -172,7 +172,224 @@ interface ThreadState<ValuesType = Record<string, unknown> | Record<string, unkn
   - 负责管理 `messages`/`values` 流式更新
   - 依赖 SSE 事件类型：`metadata` / `updates` / `values` / `messages` / `end` / `error`
 
-### 4.2 `POST /threads/{thread_id}/runs/stream`
+### 4.2 StreamMode 完整类型定义
+
+根据 `@langchain/langgraph-sdk/dist/types.stream.d.ts`，SDK 支持以下 StreamMode：
+
+```ts
+type StreamMode = "values" | "messages" | "updates" | "events" | "debug"
+                | "tasks" | "checkpoints" | "custom" | "messages-tuple";
+```
+
+每种模式对应的 SSE 事件 `data` 结构如下：
+
+#### 4.2.1 `values` 模式
+
+```ts
+type ValuesStreamEvent<StateType> = {
+  event: "values";
+  data: StateType;  // 完整的状态快照
+};
+```
+
+示例：
+
+```json
+event: values
+data: {"messages": [...], "todos": [], "files": {}}
+```
+
+#### 4.2.2 `messages` / `messages-tuple` 模式
+
+```ts
+type MessagesTupleStreamEvent = {
+  event: "messages";
+  data: [message: Message, config: MessageTupleMetadata];
+};
+
+type MessageTupleMetadata = {
+  tags: string[];
+  [key: string]: unknown;
+};
+```
+
+**关键点**：`data[0]` 必须是完整的 `Message` 对象，不能是字符串 repr。
+
+示例：
+
+```json
+event: messages
+data: [
+  {
+    "id": "run-xxx-0",
+    "type": "AIMessageChunk",
+    "content": "如果你",
+    "name": null,
+    "additional_kwargs": {},
+    "response_metadata": {},
+    "tool_calls": []
+  },
+  {
+    "tags": [],
+    "langgraph_step": 1,
+    "langgraph_node": "agent"
+  }
+]
+```
+
+#### 4.2.3 `updates` 模式
+
+```ts
+type UpdatesStreamEvent<UpdateType> = {
+  event: "updates";
+  data: {
+    [node: string]: UpdateType;  // 节点名 -> 更新内容
+  };
+};
+```
+
+示例：
+
+```json
+event: updates
+data: {"agent": {"messages": [...]}}
+```
+
+#### 4.2.4 `tasks` 模式
+
+```ts
+// 任务创建事件
+type TasksStreamCreateEvent<StateType> = {
+  event: "tasks";
+  data: {
+    id: string;
+    name: string;
+    interrupts: Interrupt[];
+    input: StateType;
+    triggers: string[];
+  };
+};
+
+// 任务结果事件
+type TasksStreamResultEvent<UpdateType> = {
+  event: "tasks";
+  data: {
+    id: string;
+    name: string;
+    interrupts: Interrupt[];
+    result: [string, UpdateType][];  // [节点名, 更新内容][]
+  };
+};
+
+// 任务错误事件
+type TasksStreamErrorEvent = {
+  event: "tasks";
+  data: {
+    id: string;
+    name: string;
+    interrupts: Interrupt[];
+    error: string;
+  };
+};
+```
+
+示例（结果事件）：
+
+```json
+event: tasks
+data: {
+  "id": "run-xxx-1",
+  "name": "agent",
+  "interrupts": [],
+  "result": [["agent", {"messages": [...]}]]
+}
+```
+
+#### 4.2.5 `checkpoints` 模式
+
+```ts
+type CheckpointsStreamEvent<StateType> = {
+  event: "checkpoints";
+  data: {
+    values: StateType;
+    next: string[];
+    config: Config;
+    metadata: Metadata;
+    tasks: ThreadTask[];
+  };
+};
+```
+
+示例：
+
+```json
+event: checkpoints
+data: {
+  "values": {"messages": [...]},
+  "next": [],
+  "config": {"configurable": {"thread_id": "...", "checkpoint_id": null}},
+  "metadata": {"source": "loop", "step": 1, "writes": null},
+  "tasks": []
+}
+```
+
+#### 4.2.6 `debug` 模式
+
+```ts
+type DebugStreamEvent = {
+  event: "debug";
+  data: unknown;  // 任意调试信息
+};
+```
+
+#### 4.2.7 `events` 模式
+
+```ts
+type EventsStreamEvent = {
+  event: "events";
+  data: {
+    event: "on_chat_model_start" | "on_llm_stream" | "on_chain_end" | ...;
+    name: string;
+    tags: string[];
+    run_id: string;
+    metadata: Record<string, unknown>;
+    parent_ids: string[];
+    data: unknown;
+  };
+};
+```
+
+#### 4.2.8 `custom` 模式
+
+```ts
+type CustomStreamEvent<T> = {
+  event: "custom";
+  data: T;  // 自定义数据，透传
+};
+```
+
+#### 4.2.9 通用事件类型
+
+除了上述模式特定事件，还有以下通用事件：
+
+```ts
+// 元数据事件（流开始时发送）
+type MetadataStreamEvent = {
+  event: "metadata";
+  data: { run_id: string; thread_id: string; };
+};
+
+// 错误事件
+type ErrorStreamEvent = {
+  event: "error";
+  data: { error: string; message: string; };
+};
+
+// 结束事件
+// event: "end", data: {}
+```
+
+### 4.3 `POST /threads/{thread_id}/runs/stream`
 
 - 请求体（示例）：
 
@@ -184,23 +401,41 @@ interface ThreadState<ValuesType = Record<string, unknown> | Record<string, unkn
         {"role": "user", "content": "你好"}
       ]
     },
-    "stream_mode": ["updates"],
+    "stream_mode": ["messages", "updates"],
     "config": {"configurable": {"thread_id": "..."}}
   }
   ```
 
-- 响应：SSE 流，事件格式：
+- 响应：SSE 流，事件格式取决于 `stream_mode`：
 
   ```text
   event: metadata
-  data: {"run_id": "..."}
+  data: {"run_id": "...", "thread_id": "..."}
 
-  event: updates
-  data: {"agent": {"messages": [...]}}
+  event: messages
+  data: [{"id": "...", "type": "AIMessageChunk", "content": "如"}, {"tags": []}]
+
+  event: messages
+  data: [{"id": "...", "type": "AIMessageChunk", "content": "果"}, {"tags": []}]
 
   event: end
   data: {}
   ```
+
+### 4.4 后端实现要点
+
+1. **模式映射**：SDK 的 `stream_mode` 需要映射到 LangGraph agent 的实际模式：
+   - `messages` / `messages-tuple` → agent `stream_mode="messages"`
+   - `values` → agent `stream_mode="values"`
+   - `updates` / `tasks` / `checkpoints` → agent `stream_mode="updates"`
+
+2. **数据序列化**：每种模式的 `data` 结构必须严格符合 SDK 类型定义：
+   - `messages` 模式：`[Message dict, metadata dict]`
+   - `updates` 模式：`{node_name: update_dict}`
+   - `tasks` 模式：`{id, name, interrupts, result/input/error}`
+   - `checkpoints` 模式：`{values, next, config, metadata, tasks}`
+
+3. **错误处理**：异常时发送 `event: error`，`data` 包含 `error` 和 `message` 字段
 
 ---
 

@@ -20,39 +20,34 @@ hostagent/
 ├── backend/              # Python backend (deepagents library + API services)
 │   ├── src/
 │   │   ├── deepagents/  # Core library
-│   │   ├── service/     # Business logic
+│   │   ├── service/     # Domain services (research agent, etc.)
 │   │   ├── facade/      # FastAPI endpoints
+│   │   ├── repository/  # Data persistence layer
 │   │   └── test/        # Tests
 │   └── README.md        # Backend-specific documentation
 ├── frontend/             # Next.js frontend UI (deep-agents-ui)
 │   ├── src/             # Frontend source code
 │   └── README.md        # Frontend-specific documentation
-├── examples/             # Example implementations
-│   └── research/        # Research agent example with LangGraph
 ├── docs/                 # Documentation
 └── conf/                 # Configuration and scripts
 ```
 
-## Quick Start (Full Stack)
+## Quick Start
 
-This monorepo supports two development modes:
+This is a full-stack application with backend services and frontend UI.
 
-### Option 1: Full Stack Development (Recommended)
+### Running the Application
 
-Run both the LangGraph backend and the web UI:
-
-**Terminal 1 - Start LangGraph Backend:**
+**Terminal 1 - Start Backend API:**
 ```bash
-# Initialize and start the research agent
-cd examples/research
-./init_langgraph.sh  # First time only
-source .venv/bin/activate
-langgraph dev  # Runs on http://127.0.0.1:2024
+cd backend
+source .venv/bin/activate  # If using venv
+# Or: uv venv && source .venv/bin/activate
+uvicorn src.facade.langgraph_api.main:app --reload --port 2024
 ```
 
 **Terminal 2 - Start Frontend UI:**
 ```bash
-# Install and start the web UI
 cd frontend
 yarn install  # First time only
 yarn dev  # Runs on http://localhost:3000
@@ -60,13 +55,13 @@ yarn dev  # Runs on http://localhost:3000
 
 **Configure the UI:**
 1. Open http://localhost:3000
-2. In the settings dialog, enter:
-   - **Deployment URL**: `http://127.0.0.1:2024`
+2. In the settings dialog, configure:
+   - **Deployment URL**: `http://localhost:2024`
    - **Assistant ID**: `researchAgent`
 
-### Option 2: Backend Only (Library Usage)
+### Library Usage (Optional)
 
-Use deepagents as a Python library:
+You can also use deepagents as a Python library:
 
 ```bash
 pip install deepagents
@@ -76,9 +71,9 @@ See [Usage Examples](#usage) below.
 
 ## Documentation
 
-- **Backend**: [backend/README.md](backend/README.md) - Python library, API services, testing
+- **Backend**: [backend/README.md](backend/README.md) - Python library, domain services, API endpoints, testing
 - **Frontend**: [frontend/README.md](frontend/README.md) - Web UI setup, configuration, features
-- **Examples**: [examples/research/](examples/research/) - Complete research agent implementation
+- **Services**: Backend domain services include research agent and other specialized agents
 
 For backend-specific setup and development instructions, see [backend/README.md](backend/README.md).
 
@@ -137,7 +132,7 @@ agent = create_deep_agent(
 result = agent.invoke({"messages": [{"role": "user", "content": "what is langgraph?"}]})
 ```
 
-See [examples/research/research_agent.py](examples/research/research_agent.py) for a more complex example.
+See the research agent implementation in `backend/src/service/research_agent/` for a complete example.
 
 The agent created with `create_deep_agent` is just a LangGraph graph - so you can interact with it (streaming, human-in-the-loop, memory, studio)
 in the same way you would any LangGraph agent.
@@ -530,4 +525,4 @@ For async tools, you can use `from deepagents import async_create_configurable_a
 - [ ] Code cleanliness (type hinting, docstrings, formating)
 - [ ] Allow for more of a robust virtual filesystem
 - [ ] Create an example of a deep coding agent built on top of this
-- [ ] Benchmark the example of [deep research agent](examples/research/research_agent.py)
+- [ ] Benchmark the research agent implementation in backend/src/service/research_agent/

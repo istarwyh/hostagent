@@ -1,6 +1,0 @@
-langgraph-cli[inmem]
-tavily-python
-python-dotenv
-langchain-mcp-adapters
-langchain-openai
--e ../../backend
