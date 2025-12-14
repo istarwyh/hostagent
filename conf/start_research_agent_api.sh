@@ -6,35 +6,45 @@ set -euo pipefail
 
 # Get the project root directory (parent of conf/)
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$PROJECT_ROOT"
+BACKEND_DIR="$PROJECT_ROOT/backend"
 
 echo "=== Starting Research Agent API Server ==="
 echo "Project root: $PROJECT_ROOT"
+echo "Backend dir: $BACKEND_DIR"
 
-# Check if virtual environment exists
-if [ ! -d .venv ]; then
-  echo "ERROR: Virtual environment not found at $PROJECT_ROOT/.venv"
+# Check if backend directory exists
+if [ ! -d "$BACKEND_DIR" ]; then
+  echo "ERROR: Backend directory not found at $BACKEND_DIR"
+  exit 1
+fi
+
+# Check if virtual environment exists in backend directory
+if [ ! -d "$BACKEND_DIR/.venv" ]; then
+  echo "ERROR: Virtual environment not found at $BACKEND_DIR/.venv"
   echo "Please create a virtual environment first:"
+  echo "  cd $BACKEND_DIR"
   echo "  python3 -m venv .venv"
   echo "  source .venv/bin/activate"
-  echo "  pip install -r requirements.txt"
+  echo "  pip install -e ."
   exit 1
 fi
 
 # Activate virtual environment
 echo "Activating virtual environment..."
-source .venv/bin/activate
+source "$BACKEND_DIR/.venv/bin/activate"
 
 # Check if required packages are installed
 if ! python -c "import fastapi" 2>/dev/null; then
   echo "ERROR: FastAPI not installed. Please run:"
+  echo "  cd $BACKEND_DIR"
   echo "  source .venv/bin/activate"
-  echo "  pip install fastapi uvicorn"
+  echo "  pip install -e ."
   exit 1
 fi
 
-# Set Python path to include project root
-export PYTHONPATH="$PROJECT_ROOT:${PYTHONPATH:-}"
+# Change to backend directory and set Python path
+cd "$BACKEND_DIR"
+export PYTHONPATH="$BACKEND_DIR:${PYTHONPATH:-}"
 
 # Start the server
 echo "Starting server at http://localhost:8000"
