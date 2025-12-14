@@ -1,8 +1,11 @@
 from dotenv import load_dotenv
 
 from src.deepagents.graph import create_deep_agent
-from src.service.research_agent.research_agent_prompt import sub_research_prompt, research_instructions, \
-    critique_sub_agent
+from src.service.research_agent.research_agent_prompt import (
+    critique_sub_agent,
+    research_instructions,
+    sub_research_prompt,
+)
 from src.service.research_agent.research_agent_tools import internet_search
 from src.util.logger import setup_logger
 

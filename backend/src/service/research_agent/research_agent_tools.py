@@ -14,6 +14,7 @@ load_dotenv()
 # It's best practice to initialize the client once and reuse it.
 tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
 
+
 @tool
 def internet_search(
     query: str,

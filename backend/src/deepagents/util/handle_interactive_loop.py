@@ -1,9 +1,10 @@
 from langchain_core.messages import HumanMessage
 from langgraph.graph.state import CompiledStateGraph
 
+from deepagents.util.agent_streamer import AgentStreamer
 from deepagents.util.async_stream_preview import local_async_streaming
 from deepagents.util.handle_user_input import read_user_input
-from deepagents.util.agent_streamer import AgentStreamer
+
 
 def build_initial_state():
     return {"messages": [], "files": {}, "todos": []}
@@ -32,9 +33,8 @@ async def interactive_loop(agent: CompiledStateGraph, persisted_state: dict):
 
         # Build input with persisted state and new user message
         agent_input = {
-            "messages": list(persisted_state.get("messages", [])) + [
-                HumanMessage(content=user_input)
-            ],
+            "messages": list(persisted_state.get("messages", []))
+            + [HumanMessage(content=user_input)],
             "files": dict(persisted_state.get("files", {})),
             "todos": list(persisted_state.get("todos", [])),
         }

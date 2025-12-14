@@ -1,8 +1,11 @@
-from deepagents import create_deep_agent, async_create_deep_agent, SubAgent
+from typing import Any, Optional
+
 from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel
-from typing import Any, Optional
-from typing_extensions import TypedDict, NotRequired
+from typing_extensions import NotRequired, TypedDict
+
+from deepagents.graph import async_create_deep_agent, create_deep_agent
+from deepagents.sub_agent import SubAgent
 
 
 class SerializableSubAgent(TypedDict):
@@ -34,9 +37,7 @@ def create_configurable_agent(
             config = config.get("configurable", {})
         else:
             config = {}
-        config_fields = {
-            k: v for k, v in config.items() if k in ["instructions", "subagents"]
-        }
+        config_fields = {k: v for k, v in config.items() if k in ["instructions", "subagents"]}
         config = AgentConfig(**config_fields)
         return create_deep_agent(
             instructions=config.instructions,
@@ -69,9 +70,7 @@ def async_create_configurable_agent(
             config = config.get("configurable", {})
         else:
             config = {}
-        config_fields = {
-            k: v for k, v in config.items() if k in ["instructions", "subagents"]
-        }
+        config_fields = {k: v for k, v in config.items() if k in ["instructions", "subagents"]}
         config = AgentConfig(**config_fields)
         return async_create_deep_agent(
             instructions=config.instructions,

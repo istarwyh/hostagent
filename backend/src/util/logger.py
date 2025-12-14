@@ -10,18 +10,21 @@
 
 import logging
 import sys
-from pathlib import Path
-from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
-from typing import Optional
 from datetime import datetime
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
+from pathlib import Path
+from typing import Optional
 
 
 class LogConfig:
     """日志配置常量"""
+
     DEFAULT_LOG_DIR = Path("logs")
     DEFAULT_LOG_LEVEL = logging.INFO
     DEFAULT_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    DETAILED_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
+    DETAILED_FORMAT = (
+        "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
+    )
     MAX_BYTES = 10 * 1024 * 1024  # 10MB
     BACKUP_COUNT = 5
 
@@ -65,7 +68,7 @@ def setup_logger(
     # 选择日志格式
     formatter = logging.Formatter(
         LogConfig.DETAILED_FORMAT if detailed else LogConfig.DEFAULT_FORMAT,
-        datefmt="%Y-%m-%d %H:%M:%S"
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     # 控制台输出
@@ -90,7 +93,7 @@ def setup_logger(
             log_dir / "app.log",
             maxBytes=LogConfig.MAX_BYTES,
             backupCount=LogConfig.BACKUP_COUNT,
-            encoding="utf-8"
+            encoding="utf-8",
         )
         file_handler.setLevel(level)
         file_handler.setFormatter(formatter)
@@ -101,7 +104,7 @@ def setup_logger(
             log_dir / "error.log",
             maxBytes=LogConfig.MAX_BYTES,
             backupCount=LogConfig.BACKUP_COUNT,
-            encoding="utf-8"
+            encoding="utf-8",
         )
         error_handler.setLevel(logging.ERROR)
         error_handler.setFormatter(formatter)
@@ -109,11 +112,7 @@ def setup_logger(
 
         # 按日期轮转的日志文件（保留最近7天）
         daily_handler = TimedRotatingFileHandler(
-            log_dir / "daily.log",
-            when="midnight",
-            interval=1,
-            backupCount=7,
-            encoding="utf-8"
+            log_dir / "daily.log", when="midnight", interval=1, backupCount=7, encoding="utf-8"
         )
         daily_handler.setLevel(level)
         daily_handler.setFormatter(formatter)
@@ -138,9 +137,7 @@ def get_logger(name: str, **kwargs) -> logging.Logger:
 
 
 def init_logging(
-    log_dir: Optional[Path] = None,
-    level: int = LogConfig.DEFAULT_LOG_LEVEL,
-    detailed: bool = False
+    log_dir: Optional[Path] = None, level: int = LogConfig.DEFAULT_LOG_LEVEL, detailed: bool = False
 ) -> None:
     """
     初始化全局日志配置
@@ -173,7 +170,7 @@ def init_logging(
 
     formatter = logging.Formatter(
         LogConfig.DETAILED_FORMAT if detailed else LogConfig.DEFAULT_FORMAT,
-        datefmt="%Y-%m-%d %H:%M:%S"
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     # 控制台输出
@@ -187,7 +184,7 @@ def init_logging(
         log_dir / "app.log",
         maxBytes=LogConfig.MAX_BYTES,
         backupCount=LogConfig.BACKUP_COUNT,
-        encoding="utf-8"
+        encoding="utf-8",
     )
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
@@ -198,7 +195,7 @@ def init_logging(
         log_dir / "error.log",
         maxBytes=LogConfig.MAX_BYTES,
         backupCount=LogConfig.BACKUP_COUNT,
-        encoding="utf-8"
+        encoding="utf-8",
     )
     error_handler.setLevel(logging.ERROR)
     error_handler.setFormatter(formatter)
@@ -246,7 +243,7 @@ class StructuredLogger:
             log_dir / "structured.jsonl",
             maxBytes=LogConfig.MAX_BYTES,
             backupCount=LogConfig.BACKUP_COUNT,
-            encoding="utf-8"
+            encoding="utf-8",
         )
         handler.setFormatter(JSONFormatter())
         self.logger.addHandler(handler)

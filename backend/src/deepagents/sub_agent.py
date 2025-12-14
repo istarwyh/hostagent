@@ -1,18 +1,17 @@
+from typing import Annotated, Any, Callable, NotRequired, Optional, Union
+
+from langchain.chat_models import init_chat_model
+from langchain_core.language_models import LanguageModelLike
+from langchain_core.messages import ToolMessage
+from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool, InjectedToolCallId, tool
+from langgraph.config import get_config
+from langgraph.prebuilt import InjectedState, create_react_agent
+from langgraph.types import Command
+from typing_extensions import TypedDict
+
 from deepagents.prompts import TASK_TOOL_DESCRIPTION
 from deepagents.state import DeepAgentState
-from langgraph.prebuilt import create_react_agent
-from langchain_core.tools import BaseTool
-from typing_extensions import TypedDict
-from langchain_core.tools import tool, InjectedToolCallId
-from langchain_core.messages import ToolMessage
-from langchain_core.language_models import LanguageModelLike
-from langchain.chat_models import init_chat_model
-from typing import Annotated, NotRequired, Any, Union, Optional, Callable
-from langgraph.types import Command
-from langchain_core.runnables import Runnable
-
-from langgraph.prebuilt import InjectedState
-from langgraph.config import get_config
 
 
 class SubAgent(TypedDict):
@@ -96,14 +95,10 @@ def _create_task_tool(
     state_schema,
     post_model_hook: Optional[Callable] = None,
 ):
-    agents = _get_agents(
-        tools, instructions, subagents, model, state_schema, post_model_hook
-    )
+    agents = _get_agents(tools, instructions, subagents, model, state_schema, post_model_hook)
     other_agents_string = _get_subagent_description(subagents)
 
-    @tool(
-        description=TASK_TOOL_DESCRIPTION.format(other_agents=other_agents_string)
-    )
+    @tool(description=TASK_TOOL_DESCRIPTION.format(other_agents=other_agents_string))
     async def task(
         description: str,
         subagent_type: str,
@@ -119,9 +114,7 @@ def _create_task_tool(
             update={
                 "files": result.get("files", {}),
                 "messages": [
-                    ToolMessage(
-                        result["messages"][-1].content, tool_call_id=tool_call_id
-                    )
+                    ToolMessage(result["messages"][-1].content, tool_call_id=tool_call_id)
                 ],
             }
         )
@@ -137,14 +130,10 @@ def _create_sync_task_tool(
     state_schema,
     post_model_hook: Optional[Callable] = None,
 ):
-    agents = _get_agents(
-        tools, instructions, subagents, model, state_schema, post_model_hook
-    )
+    agents = _get_agents(tools, instructions, subagents, model, state_schema, post_model_hook)
     other_agents_string = _get_subagent_description(subagents)
 
-    @tool(
-        description=TASK_TOOL_DESCRIPTION.format(other_agents=other_agents_string)
-    )
+    @tool(description=TASK_TOOL_DESCRIPTION.format(other_agents=other_agents_string))
     def task(
         description: str,
         subagent_type: str,
@@ -160,9 +149,7 @@ def _create_sync_task_tool(
             update={
                 "files": result.get("files", {}),
                 "messages": [
-                    ToolMessage(
-                        result["messages"][-1].content, tool_call_id=tool_call_id
-                    )
+                    ToolMessage(result["messages"][-1].content, tool_call_id=tool_call_id)
                 ],
             }
         )

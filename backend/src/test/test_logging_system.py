@@ -16,8 +16,9 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.util.logger import setup_logger, StructuredLogger
 import logging
+
+from src.util.logger import StructuredLogger, setup_logger
 
 
 def test_basic_logging():
@@ -184,6 +185,7 @@ def main():
     except Exception as e:
         print(f"\n✗ 测试失败: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
 

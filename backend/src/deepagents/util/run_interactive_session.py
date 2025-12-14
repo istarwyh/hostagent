@@ -1,20 +1,20 @@
-from typing import Callable, List, Any
+from typing import Any, Callable, Dict, List
 
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.utils import from_env
-from deepagents.util.handle_interactive_loop import build_initial_state, interactive_loop
-from deepagents.util.handle_user_input import print_banner
-from deepagents.model import get_default_model
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.graph.state import CompiledStateGraph
-from typing import Dict
+
+from deepagents.model import get_default_model
+from deepagents.util.handle_interactive_loop import build_initial_state, interactive_loop
+from deepagents.util.handle_user_input import print_banner
 
 
 async def run_interactive_session(
-        agent_id: str,
-        agentBuilder: Callable[[List[Any], str, BaseLanguageModel, List[Any]], CompiledStateGraph],
-        instructions: str,
-        subagents: List[Any]
+    agent_id: str,
+    agentBuilder: Callable[[List[Any], str, BaseLanguageModel, List[Any]], CompiledStateGraph],
+    instructions: str,
+    subagents: List[Any],
 ) -> None:
     """Run an interactive terminal session for the product health report agent.
 
@@ -36,19 +36,19 @@ async def run_interactive_session(
     for tool in await mcp_client.get_tools():
         tool.description = f"Powered by '{tool.name}'.\n{tool.description}"
         loaded_tools.append(tool)
-        
+
     agent = agentBuilder(loaded_tools, instructions, llm, subagents)
     await interactive_loop(agent, persisted_state)
 
 
 def _get_mcp_server_configs(agent_id: str) -> Dict[str, Any]:
-   
+
     return {
         "mcpadvisor": {
-            "transport":"stdio",
-            "command":"npx",
-            "args":["-y","@xiaohui-wang/mcpadvisor"],
-            "env":{}
+            "transport": "stdio",
+            "command": "npx",
+            "args": ["-y", "@xiaohui-wang/mcpadvisor"],
+            "env": {},
         },
         # "tavily": {
         #     "transport":"stdio",
@@ -57,7 +57,7 @@ def _get_mcp_server_configs(agent_id: str) -> Dict[str, Any]:
         #         "-y",
         #         "tavily-mcp@0.2.3"
         #     ],
-        #     "env": { 
+        #     "env": {
         #         "TAVILY_API_KEY": from_env("TAVILY_API_KEY")
         #     }
         # }

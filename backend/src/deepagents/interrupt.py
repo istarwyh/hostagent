@@ -1,13 +1,14 @@
 """Interrupt configuration functionality for deep agents using LangGraph prebuilts."""
 
-from typing import Dict, Any, List, Optional, Union
-from langgraph.types import interrupt
+from typing import Any, Dict, List, Optional, Union
+
 from langgraph.prebuilt.interrupt import (
-    HumanInterruptConfig,
     ActionRequest,
     HumanInterrupt,
+    HumanInterruptConfig,
     HumanResponse,
 )
+from langgraph.types import interrupt
 
 ToolInterruptConfig = Dict[str, Union[HumanInterruptConfig, bool]]
 
@@ -82,9 +83,7 @@ def create_interrupt_hook(
                 action=tool_name,
                 args=tool_args,
             ),
-            "config": tool_config
-            if isinstance(tool_config, dict)
-            else default_tool_config,
+            "config": tool_config if isinstance(tool_config, dict) else default_tool_config,
             "description": description,
         }
 

@@ -1,0 +1,87 @@
+[flake8]
+# Maximum line length
+max-line-length = 100
+
+# Exclude common directories
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    .eggs,
+    *.egg,
+    .tox,
+    dist,
+    build,
+    docs,
+    .pytest_cache
+
+# Ignore specific error codes
+ignore =
+    # E203: whitespace before ':' (conflicts with black)
+    E203,
+    # W503: line break before binary operator (conflicts with black)
+    W503,
+    # E501: line too long (handled by black)
+    E501,
+    # D100: Missing docstring in public module
+    D100,
+    # D101: Missing docstring in public class
+    D101,
+    # D102: Missing docstring in public method
+    D102,
+    # D103: Missing docstring in public function
+    D103,
+    # D104: Missing docstring in public package
+    D104,
+    # D105: Missing docstring in magic method
+    D105,
+    # D107: Missing docstring in __init__
+    D107,
+    # F401: imported but unused (common in __init__.py and during development)
+    F401,
+    # F841: local variable assigned but never used
+    F841,
+    # E402: module level import not at top of file (common in tests)
+    E402,
+    # E741: ambiguous variable name
+    E741,
+    # B007: Loop control variable not used
+    B007,
+    # SIM102: Use a single if-statement instead of nested if-statements
+    SIM102,
+    # F821: undefined name (type checking issues)
+    F821,
+    # F541: f-string is missing placeholders
+    F541
+
+# Select error codes to check
+select =
+    # Pyflakes errors
+    F,
+    # Pycodestyle errors
+    E,
+    # Pycodestyle warnings
+    W,
+    # McCabe complexity
+    C,
+    # Flake8-bugbear
+    B,
+    # Flake8-comprehensions
+    C4,
+    # Flake8-simplify
+    SIM
+
+# Maximum complexity (increased to allow existing complex functions)
+max-complexity = 20
+
+# Per-file ignores
+per-file-ignores =
+    # Tests don't need docstrings
+    src/test/**/*.py:D,
+    # __init__.py files can have unused imports
+    __init__.py:F401,F403
+
+# Count errors
+count = True
+statistics = True

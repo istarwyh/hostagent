@@ -1,29 +1,26 @@
-from langchain_core.tools import tool, InjectedToolCallId
-from langgraph.types import Command
-from langchain_core.messages import ToolMessage
 from typing import Annotated, Union
+
+from langchain_core.messages import ToolMessage
+from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.prebuilt import InjectedState
+from langgraph.types import Command
 
 from deepagents.prompts import (
-    WRITE_TODOS_TOOL_DESCRIPTION,
+    EDIT_FILE_TOOL_DESCRIPTION,
     LIST_FILES_TOOL_DESCRIPTION,
     READ_FILE_TOOL_DESCRIPTION,
     WRITE_FILE_TOOL_DESCRIPTION,
-    EDIT_FILE_TOOL_DESCRIPTION,
+    WRITE_TODOS_TOOL_DESCRIPTION,
 )
-from deepagents.state import Todo, DeepAgentState
+from deepagents.state import DeepAgentState, Todo
 
 
 @tool(description=WRITE_TODOS_TOOL_DESCRIPTION)
-def write_todos(
-    todos: list[Todo], tool_call_id: Annotated[str, InjectedToolCallId]
-) -> Command:
+def write_todos(todos: list[Todo], tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     return Command(
         update={
             "todos": todos,
-            "messages": [
-                ToolMessage(f"Updated todo list to {todos}", tool_call_id=tool_call_id)
-            ],
+            "messages": [ToolMessage(f"Updated todo list to {todos}", tool_call_id=tool_call_id)],
         }
     )
 
@@ -91,9 +88,7 @@ def write_file(
     return Command(
         update={
             "files": files,
-            "messages": [
-                ToolMessage(f"Updated file {file_path}", tool_call_id=tool_call_id)
-            ],
+            "messages": [ToolMessage(f"Updated file {file_path}", tool_call_id=tool_call_id)],
         }
     )
 
@@ -132,11 +127,11 @@ def edit_file(
     if replace_all:
         new_content = content.replace(old_string, new_string)
         replacement_count = content.count(old_string)
-        result_msg = f"Successfully replaced {replacement_count} instance(s) of the string in '{file_path}'"
+        result_msg = (
+            f"Successfully replaced {replacement_count} instance(s) of the string in '{file_path}'"
+        )
     else:
-        new_content = content.replace(
-            old_string, new_string, 1
-        )  # Replace only first occurrence
+        new_content = content.replace(old_string, new_string, 1)  # Replace only first occurrence
         result_msg = f"Successfully replaced string in '{file_path}'"
 
     # Update the mock filesystem

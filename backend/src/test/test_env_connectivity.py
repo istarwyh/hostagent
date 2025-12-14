@@ -14,7 +14,7 @@ def test_chat() -> None:
         model=model,
         messages=[
             ChatCompletionSystemMessageParam(role="system", content="You are a concise assistant."),
-            ChatCompletionUserMessageParam(role="user", content="Reply with the single word: pong")
+            ChatCompletionUserMessageParam(role="user", content="Reply with the single word: pong"),
         ],
         max_tokens=5,
         temperature=0,

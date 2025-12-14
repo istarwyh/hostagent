@@ -485,7 +485,7 @@ def serialize_message(msg) -> dict:
         return msg.dict()
     if isinstance(msg, dict):
         return msg
-    
+
     # 手动构造
     return {
         "type": getattr(msg, 'type', 'unknown'),

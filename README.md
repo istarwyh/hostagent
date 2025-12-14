@@ -368,7 +368,7 @@ These can be disabled via the [`builtin_tools`](#builtintools--optional-) parame
 
 `deepagents` supports human-in-the-loop approval for tool execution. You can configure specific tools to require human approval before execution using the `interrupt_config` parameter, which maps tool names to `HumanInterruptConfig`.
 
-`HumanInterruptConfig` is how you specify what type of human in the loop patterns are supported. 
+`HumanInterruptConfig` is how you specify what type of human in the loop patterns are supported.
 It is a dictionary with four specific keys:
 
 - `allow_ignore`: Whether the user can skip the tool call

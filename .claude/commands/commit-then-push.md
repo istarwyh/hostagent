@@ -1,47 +1,12 @@
-# Commit Then Push
+提交当前变更并推送
 
-Create a git commit and push it to the remote repository.
+1. 检查当前变更是否都合理
+2. commit 所有合理变更，赋予有意义的名字
+3. 提交的时候,会触发 pre-commit 检查。如果 pre-commit 提示问题，逐步修复。对于不确定的 issue,请求用户确认。
+注意：如果需要提前检查变更，禁止使用 `pre-commit run --all-files`, 只能针对当前提交的文件使用 `pre-commit run --files <file>`
+注意： 不可以使用 `--no-verify` 跳过检查,如果有问题，可以提给用户确认。可以建议用户忽略不必要修改的提示，比如针对历史代码跳过放松检查 `# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals`, 甚至建议放松 pre-commit 检查
 
-## Instructions
+4. 合并 master 分支, git fetch+git merge origin/master
+注意: 如果合并提示冲突,取消 merge 报告给用户。
 
-When this command is invoked, follow these steps:
-
-1. **Check Git Status**: Run `git status` to see what changes are staged and unstaged
-2. **Review Changes**: Run `git diff` to review both staged and unstaged changes
-3. **Stage Changes**: If there are unstaged changes that should be committed, ask the user which files to stage, or stage all relevant files with `git add`
-4. **Review Commit History**: Run `git log --oneline -5` to see recent commit messages and follow the repository's commit message style
-5. **Create Commit**:
-   - Draft a concise, descriptive commit message that follows the project's conventions
-   - Create the commit with the message ending with:
-     ```
-     🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-     Co-Authored-By: Claude <noreply@anthropic.com>
-     ```
-   - Use a HEREDOC format for the commit message
-6. **Push to Remote**: After successful commit, push to the remote repository with `git push`
-7. **Verify**: Run `git status` to confirm the push was successful
-
-## Important Notes
-
-- NEVER skip git hooks (don't use --no-verify)
-- NEVER force push to main/master branches
-- Always check that you're on the correct branch before pushing
-- If pre-commit hooks modify files, handle the changes appropriately
-- Ensure commit messages are meaningful and follow project conventions
-- Confirm with the user if unsure about which files to commit
-
-## Example Usage
-
-```bash
-# Stage changes
-git add .
-
-# Create commit
-git commit -m "$(cat <<'EOF'
-feat: add user authentication module
-)"
-
-# Push to remote
-git push
-```
+5. push 到远程仓库

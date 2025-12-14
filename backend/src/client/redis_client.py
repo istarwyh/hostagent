@@ -1,8 +1,9 @@
-import redis
-import os
 import logging
-from typing import Optional, Any, Union
+import os
 from contextlib import contextmanager
+from typing import Any, Optional, Union
+
+import redis
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ class RedisClient:
             url: Redis connection URL. If None, uses REDIS_URL env var.
             **kwargs: Additional arguments passed to redis.Redis
         """
-        self.url = url or os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+        self.url = url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self._client = None
         self._connection_kwargs = kwargs
         self._connect()
@@ -32,11 +33,11 @@ class RedisClient:
             self._client = redis.Redis.from_url(
                 self.url,
                 decode_responses=True,  # Return strings instead of bytes
-                socket_keepalive=True,   # Keep connections alive
+                socket_keepalive=True,  # Keep connections alive
                 socket_keepalive_options={},  # Platform-specific TCP keepalive
-                retry_on_timeout=True,   # Retry on timeout
+                retry_on_timeout=True,  # Retry on timeout
                 health_check_interval=30,  # Periodic health checks
-                **self._connection_kwargs
+                **self._connection_kwargs,
             )
             # Test connection
             self._client.ping()
@@ -60,12 +61,15 @@ class RedisClient:
             logger.error(f"Redis GET error for key '{key}': {e}")
             return None
 
-    def set(self, key: str, value: Union[str, int, float],
-            ex: Optional[int] = None,  # Expire time in seconds
-            px: Optional[int] = None,  # Expire time in milliseconds
-            nx: bool = False,          # Set only if key doesn't exist
-            xx: bool = False           # Set only if key exists
-            ) -> bool:
+    def set(
+        self,
+        key: str,
+        value: Union[str, int, float],
+        ex: Optional[int] = None,  # Expire time in seconds
+        px: Optional[int] = None,  # Expire time in milliseconds
+        nx: bool = False,  # Set only if key doesn't exist
+        xx: bool = False,  # Set only if key exists
+    ) -> bool:
         """Set key-value pair with optional expiration and conditions."""
         try:
             return bool(self.client.set(key, value, ex=ex, px=px, nx=nx, xx=xx))

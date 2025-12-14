@@ -4,7 +4,7 @@ import re
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Sequence, Union, Optional, Callable, Literal
+from typing import Any, Callable, Literal, Optional, Sequence, Union
 
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
@@ -16,22 +16,22 @@ from deepagents.workspace_dir import get_workspace_dir_name
 class SimpleAuditToolNode(ToolNode):
     """
     带审计功能的工具节点
-    
+
     继承自ToolNode，在执行工具前后记录入参和出参到文件系统
     """
 
     def __init__(
-            self,
-            tools: Sequence[Union[BaseTool, Callable, dict[str, Any]]],
-            *,
-            audit_dir: Optional[str] = None,
-            name: str = "tools",
-            tags: Optional[list[str]] = None,
-            handle_tool_errors: bool = True,
+        self,
+        tools: Sequence[Union[BaseTool, Callable, dict[str, Any]]],
+        *,
+        audit_dir: Optional[str] = None,
+        name: str = "tools",
+        tags: Optional[list[str]] = None,
+        handle_tool_errors: bool = True,
     ):
         """
         初始化审计工具节点
-        
+
         Args:
             tools: 工具列表
             audit_dir: 审计日志目录，默认为 ./audit_logs
@@ -39,12 +39,7 @@ class SimpleAuditToolNode(ToolNode):
             tags: 标签列表
             handle_tool_errors: 是否处理工具错误
         """
-        super().__init__(
-            tools=tools,
-            name=name,
-            tags=tags,
-            handle_tool_errors=handle_tool_errors
-        )
+        super().__init__(tools=tools, name=name, tags=tags, handle_tool_errors=handle_tool_errors)
 
         # 设置审计目录
         self.workspace_dir = get_workspace_dir_name()
@@ -56,11 +51,11 @@ class SimpleAuditToolNode(ToolNode):
     def _generate_audit_file_path(self, tool_name: str, tool_call_id: str) -> str:
         """
         提前生成审计文件路径
-        
+
         Args:
             tool_name: 工具名称
             tool_call_id: 工具调用ID
-        
+
         Returns:
             审计日志文件路径
         """
@@ -71,12 +66,11 @@ class SimpleAuditToolNode(ToolNode):
 
     @staticmethod
     def _attach_audit_file_path(result: Any, audit_file_path: str) -> Any:
-
         """
         通用方法：将审计文件路径附加到结果中
-        
+
         支持多种数据类型：ToolMessage、dict、list、其他对象
-        
+
         Args:
             result: 要附加路径的结果对象
             audit_file_path: 审计文件路径
@@ -84,7 +78,7 @@ class SimpleAuditToolNode(ToolNode):
         Returns:
             附加了审计文件路径的结果对象
         """
-        file_path = '当前数据的相对 workspace 的文件路径(即引用路径):'
+        file_path = "当前数据的相对 workspace 的文件路径(即引用路径):"
         audit_file_path = SimpleAuditToolNode.extract_from_workspace(audit_file_path)
         if result is None:
             return result
@@ -106,7 +100,7 @@ class SimpleAuditToolNode(ToolNode):
         str: 从 'workspace' 开始到字符串末尾的子字符串，如果没有找到则返回 None
         """
         # 使用正则表达式匹配从 'workspace' 开始到字符串末尾的部分
-        pattern = r'workspace.*$'
+        pattern = r"workspace.*$"
         match = re.search(pattern, input_string)
 
         if match:
@@ -116,17 +110,17 @@ class SimpleAuditToolNode(ToolNode):
 
     @staticmethod
     def _write_audit_log(
-            tool_name: str,
-            tool_call_id: str,
-            input_data: Any,
-            output_data: Any,
-            error: Optional[str] = None,
-            execution_time_ms: float = 0,
-            audit_file_path: Optional[str] = None
+        tool_name: str,
+        tool_call_id: str,
+        input_data: Any,
+        output_data: Any,
+        error: Optional[str] = None,
+        execution_time_ms: float = 0,
+        audit_file_path: Optional[str] = None,
     ) -> str:
         """
         写入审计日志到文件
-        
+
         Args:
             tool_name: 工具名称
             tool_call_id: 工具调用ID
@@ -135,7 +129,7 @@ class SimpleAuditToolNode(ToolNode):
             error: 错误信息（如果有）
             execution_time_ms: 执行时间（毫秒）
             audit_file_path: 预生成的审计文件路径（可选） 绝对路径
-        
+
         Returns:
             审计日志文件路径
         """
@@ -150,30 +144,27 @@ class SimpleAuditToolNode(ToolNode):
             "input": input_data,
             "output": output_data,
             "error": error,
-            "status": "failed" if error else "success"
+            "status": "failed" if error else "success",
         }
 
         filepath = Path(audit_file_path)
 
-        with open(filepath, 'w', encoding='utf-8') as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(audit_record, f, ensure_ascii=False, indent=2, default=str)
 
         # 同时追加到当天的汇总日志
         summary_file = f"{filepath.parent}/summary_{datetime.now().strftime('%Y%m%d')}.jsonl"
-        with open(summary_file, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(audit_record, ensure_ascii=False, default=str) + '\n')
+        with open(summary_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(audit_record, ensure_ascii=False, default=str) + "\n")
 
         return str(filepath)
-    
+
     def invoke(
-            self,
-            input: Union[dict[str, Any], Any],
-            config: Optional[dict] = None,
-            **kwargs: Any
+        self, input: Union[dict[str, Any], Any], config: Optional[dict] = None, **kwargs: Any
     ) -> Any:
         """
         执行工具调用并记录审计日志
-        
+
         重写invoke方法以添加审计功能
         """
         import time
@@ -199,7 +190,9 @@ class SimpleAuditToolNode(ToolNode):
         try:
             # 调用父类的invoke方法执行实际的工具
             result = super().invoke(input, config, **kwargs)
-            output_content = self._extract_output_content_and_add_audit_path(result, audit_file_path)
+            output_content = self._extract_output_content_and_add_audit_path(
+                result, audit_file_path
+            )
             return result
         except Exception as e:
             error_msg = str(e)
@@ -215,15 +208,19 @@ class SimpleAuditToolNode(ToolNode):
                 output_data=output_content,
                 error=error_msg,
                 execution_time_ms=execution_time_ms,
-                audit_file_path=audit_file_path
+                audit_file_path=audit_file_path,
             )
 
             # 打印审计信息（可选）
             status = "❌ FAILED" if error_msg else "✅ SUCCESS"
-            print(f"\n[AUDIT] {status} Tool: {tool_name} | ID: {tool_call_id[:8]} | Time: {execution_time_ms:.2f}ms")
+            print(
+                f"\n[AUDIT] {status} Tool: {tool_name} | ID: {tool_call_id[:8]} | Time: {execution_time_ms:.2f}ms"
+            )
             print(f"[AUDIT] Log saved to: {audit_file}")
 
-    def _extract_output_content_and_add_audit_path(self, result: Any, audit_file_path: Optional[str] = None):
+    def _extract_output_content_and_add_audit_path(
+        self, result: Any, audit_file_path: Optional[str] = None
+    ):
         output_content = None
         if result:
             if isinstance(result, ToolMessage):
@@ -233,21 +230,20 @@ class SimpleAuditToolNode(ToolNode):
                 messages = result["messages"]
                 if messages and isinstance(messages[0], ToolMessage):
                     output_content = messages[0].content
-                    messages[0].content = self._attach_audit_file_path(output_content, audit_file_path)
+                    messages[0].content = self._attach_audit_file_path(
+                        output_content, audit_file_path
+                    )
             else:
                 output_content = result
                 output_content = self._attach_audit_file_path(output_content, audit_file_path)
         return output_content
 
     async def ainvoke(
-            self,
-            input: Union[dict[str, Any], Any],
-            config: Optional[dict] = None,
-            **kwargs: Any
+        self, input: Union[dict[str, Any], Any], config: Optional[dict] = None, **kwargs: Any
     ) -> Any:
         """
         异步执行工具调用并记录审计日志
-        
+
         重写ainvoke方法以添加审计功能
         """
         import time
@@ -275,7 +271,9 @@ class SimpleAuditToolNode(ToolNode):
         try:
             # 调用父类的ainvoke方法执行实际的工具
             result = await super().ainvoke(input, config, **kwargs)
-            output_content = self._extract_output_content_and_add_audit_path(result, audit_file_path)
+            output_content = self._extract_output_content_and_add_audit_path(
+                result, audit_file_path
+            )
             return result
         except Exception as e:
             error_msg = str(e)
@@ -291,10 +289,12 @@ class SimpleAuditToolNode(ToolNode):
                 output_data=output_content,
                 error=error_msg,
                 execution_time_ms=execution_time_ms,
-                audit_file_path=audit_file_path
+                audit_file_path=audit_file_path,
             )
 
             # 打印审计信息（可选）
             status = "❌ FAILED" if error_msg else "✅ SUCCESS"
-            print(f"\n[AUDIT] {status} Tool: {tool_name} | ID: {tool_call_id[:8]} | Time: {execution_time_ms:.2f}ms")
+            print(
+                f"\n[AUDIT] {status} Tool: {tool_name} | ID: {tool_call_id[:8]} | Time: {execution_time_ms:.2f}ms"
+            )
             print(f"[AUDIT] Log saved to: {audit_file}")

@@ -8,22 +8,23 @@ Prerequisites:
 This example uses Moonshot AI (Kimi) API with OpenAI-compatible interface.
 Set OPENAI_API_KEY to your Moonshot API key when prompted at runtime.
 """
+
 from __future__ import annotations
 
-import os
-import json
 import getpass
+import json
+import os
 from typing import Annotated, Sequence, TypedDict
 
-from langchain_openai import ChatOpenAI
-from langchain_core.tools import tool
-from langchain_core.messages import BaseMessage, ToolMessage, SystemMessage, AIMessage
+from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph.graph import StateGraph, END
-
 
 # ---------- Setup: ensure OPENAI_API_KEY exists ----------
+
 
 def _set_env(var: str) -> None:
     if not os.environ.get(var):
@@ -35,6 +36,7 @@ def _set_env(var: str) -> None:
 
 
 # ---------- Define graph state ----------
+
 
 class AgentState(TypedDict):
     """The state of the agent.
@@ -69,6 +71,7 @@ tools_by_name = {tool_.name: tool_ for tool_ in tools}
 
 
 # ---------- Define nodes and edges ----------
+
 
 def tool_node(state: AgentState):
     """A simplified Tool node that executes tool calls from the last AI message."""
@@ -153,15 +156,17 @@ graph = workflow.compile()
 
 # ---------- Demo / Usage ----------
 
+
 def print_stream(stream):
     """Helper to pretty-print streamed values."""
     for s in stream:
         message = s["messages"][-1]
         print(message)
 
+
 def _maybe_show_graph_png():
     try:
-        from IPython.display import Image, display  # type: ignore
+        from IPython.display import Image, display  # type: ignore[import-untyped]
 
         display(Image(graph.get_graph().draw_mermaid_png()))
     except Exception:

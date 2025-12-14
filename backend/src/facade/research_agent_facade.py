@@ -8,15 +8,15 @@ Provides:
 - Thread-based session management
 """
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
-from typing import Optional, AsyncIterator, Any
 import json
+from typing import Any, AsyncIterator, Optional
 from uuid import uuid4
 
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import StreamMode
+from pydantic import BaseModel, Field
 
 from src.service.research_agent.research_agent import agent as base_agent
 from src.util.logger import setup_logger
@@ -28,7 +28,7 @@ logger = setup_logger(__name__)
 app = FastAPI(
     title="Research Agent API",
     description="LangGraph-based Research Agent with streaming and state management",
-    version="1.0.0"
+    version="1.0.0",
 )
 research_agent = base_agent
 
@@ -36,6 +36,7 @@ research_agent = base_agent
 # Request/Response Models
 class ResearchRequest(BaseModel):
     """Request model for research queries."""
+
     query: str = Field(..., description="The research query to process")
     thread_id: Optional[str] = Field(None, description="Thread ID for conversation continuity")
 
@@ -43,13 +44,14 @@ class ResearchRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "query": "What are the latest developments in quantum computing?",
-                "thread_id": "user-123"
+                "thread_id": "user-123",
             }
         }
 
 
 class ResearchResponse(BaseModel):
     """Response model for completed research."""
+
     result: Any
     thread_id: str
     status: str = "completed"
@@ -57,12 +59,14 @@ class ResearchResponse(BaseModel):
 
 class StreamEvent(BaseModel):
     """Stream event model."""
+
     event: str
     data: Any
     thread_id: str
 
 
 # API Endpoints
+
 
 @app.get("/health")
 async def health_check():
@@ -79,22 +83,13 @@ async def invoke_research(request: ResearchRequest):
     thread_id = request.thread_id or str(uuid4())
 
     try:
-        config = {
-            "configurable": {
-                "thread_id": thread_id
-            }
-        }
+        config = {"configurable": {"thread_id": thread_id}}
 
         result = await research_agent.ainvoke(
-            {"messages": [{"role": "user", "content": request.query}]},
-            config=config
+            {"messages": [{"role": "user", "content": request.query}]}, config=config
         )
 
-        return ResearchResponse(
-            result=result,
-            thread_id=thread_id,
-            status="completed"
-        )
+        return ResearchResponse(result=result, thread_id=thread_id, status="completed")
 
     except Exception as e:
         logger.error(f"Error in invoke_research: {str(e)}")
@@ -111,22 +106,18 @@ async def stream_research(request: ResearchRequest):
 
     async def event_generator() -> AsyncIterator[str]:
         try:
-            config = {
-                "configurable": {
-                    "thread_id": thread_id
-                }
-            }
+            config = {"configurable": {"thread_id": thread_id}}
 
             async for event in research_agent.astream_events(
                 {"messages": [{"role": "user", "content": request.query}]},
                 config=config,
-                version="v2"
+                version="v2",
             ):
                 # Format as SSE
                 event_data = {
                     "event": event.get("event", "unknown"),
                     "data": event.get("data", {}),
-                    "thread_id": thread_id
+                    "thread_id": thread_id,
                 }
                 yield f"data: {json.dumps(event_data, default=str)}\n\n"
 
@@ -135,11 +126,7 @@ async def stream_research(request: ResearchRequest):
 
         except Exception as e:
             logger.error(f"Error in stream_research: {str(e)}")
-            error_event = {
-                "event": "error",
-                "data": {"error": str(e)},
-                "thread_id": thread_id
-            }
+            error_event = {"event": "error", "data": {"error": str(e)}, "thread_id": thread_id}
             yield f"data: {json.dumps(error_event)}\n\n"
 
     return StreamingResponse(
@@ -148,7 +135,7 @@ async def stream_research(request: ResearchRequest):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-        }
+        },
     )
 
 
@@ -159,36 +146,24 @@ async def stream_updates(request: ResearchRequest):
     Returns state changes as they occur.
     """
     thread_id = request.thread_id or str(uuid4())
-    
+
     async def update_generator() -> AsyncIterator[str]:
         try:
-            config = {
-                "configurable": {
-                    "thread_id": thread_id
-                }
-            }
+            config = {"configurable": {"thread_id": thread_id}}
 
             async for chunk in research_agent.astream(
                 {"messages": [{"role": "user", "content": request.query}]},
                 config=config,
-                stream_mode="updates"
+                stream_mode="updates",
             ):
-                event_data = {
-                    "event": "update",
-                    "data": chunk,
-                    "thread_id": thread_id
-                }
+                event_data = {"event": "update", "data": chunk, "thread_id": thread_id}
                 yield f"data: {json.dumps(event_data, default=str)}\n\n"
 
             yield f"data: {json.dumps({'event': 'done', 'thread_id': thread_id})}\n\n"
 
         except Exception as e:
             logger.error(f"Error in stream_updates: {str(e)}")
-            error_event = {
-                "event": "error",
-                "data": {"error": str(e)},
-                "thread_id": thread_id
-            }
+            error_event = {"event": "error", "data": {"error": str(e)}, "thread_id": thread_id}
             yield f"data: {json.dumps(error_event)}\n\n"
 
     return StreamingResponse(
@@ -197,7 +172,7 @@ async def stream_updates(request: ResearchRequest):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-        }
+        },
     )
 
 
@@ -214,7 +189,7 @@ async def get_state(thread_id: str):
         return {
             "thread_id": thread_id,
             "state": state.values if state else None,
-            "next_steps": state.next if state else []
+            "next_steps": state.next if state else [],
         }
 
     except Exception as e:
@@ -233,11 +208,12 @@ async def root():
             "stream": "/research/stream",
             "stream_updates": "/research/stream-updates",
             "get_state": "/research/state/{thread_id}",
-            "health": "/health"
-        }
+            "health": "/health",
+        },
     }
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)  # nosec B104  # Development server

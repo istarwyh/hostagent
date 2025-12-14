@@ -485,7 +485,7 @@ def serialize_message(msg) -> dict:
         return msg.dict()
     if isinstance(msg, dict):
         return msg
-    
+
     # 手动构造
     return {
         "type": getattr(msg, 'type', 'unknown'),
@@ -707,7 +707,7 @@ logger = setup_logger(__name__)
 async def stream_research(request: ResearchRequest):
     """Facade 层只负责 HTTP 处理，业务逻辑委托给 Service"""
     thread_id = request.thread_id or str(uuid4())
-    
+
     async def event_generator():
         try:
             async for event in agent.astream_events(...):
@@ -715,7 +715,7 @@ async def stream_research(request: ResearchRequest):
         except Exception as e:
             logger.error(f"Stream error: {e}", exc_info=True)
             yield format_error_event(e)
-    
+
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 ```
 
@@ -760,11 +760,11 @@ logger = setup_logger(__name__)
 
 class CheckpointerFactory:
     """工厂模式创建 checkpointer，便于切换存储后端"""
-    
+
     @staticmethod
     def create(storage_type: str = "memory"):
         logger.info(f"Creating checkpointer with storage: {storage_type}")
-        
+
         if storage_type == "memory":
             return MemorySaver()
         elif storage_type == "postgres":
@@ -832,7 +832,7 @@ from src.util.logger import StructuredLogger
 logger = StructuredLogger(__name__)
 
 # 带上下文的结构化日志
-logger.log("INFO", "用户请求处理完成", 
+logger.log("INFO", "用户请求处理完成",
     thread_id="abc-123",
     duration_ms=150,
     tokens_used=1024

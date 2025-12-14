@@ -1,6 +1,6 @@
 import asyncio
-from typing import AsyncIterator, Dict, Any, Iterator
 import traceback
+from typing import Any, AsyncIterator, Dict, Iterator
 
 
 class AgentStreamer:
@@ -9,7 +9,9 @@ class AgentStreamer:
     def __init__(self, agent):
         self.agent = agent
 
-    async def stream_with_progress(self, input_data: Dict[str, Any]) -> AsyncIterator[Dict[str, Any]]:
+    async def stream_with_progress(
+        self, input_data: Dict[str, Any]
+    ) -> AsyncIterator[Dict[str, Any]]:
         """
         流式执行 agent 并输出中间过程
 
@@ -23,11 +25,7 @@ class AgentStreamer:
             # 使用 astream 方法进行流式处理
             async for chunk in self.agent.astream(input_data):
                 # 输出当前步骤信息
-                yield {
-                    "type": "step",
-                    "data": chunk,
-                    "timestamp": asyncio.get_event_loop().time()
-                }
+                yield {"type": "step", "data": chunk, "timestamp": asyncio.get_event_loop().time()}
 
         except Exception as e:
             # Print full traceback to help diagnose issues like "'str' object has no attribute 'model_dump'"
@@ -36,7 +34,7 @@ class AgentStreamer:
                 "type": "error",
                 "error": str(e),
                 "exception_type": e.__class__.__name__,
-                "timestamp": asyncio.get_event_loop().time()
+                "timestamp": asyncio.get_event_loop().time(),
             }
 
     def stream_sync(self, input_data: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
@@ -56,13 +54,10 @@ class AgentStreamer:
                     "type": "step",
                     "data": chunk,
                     "node": list(chunk.keys())[0] if chunk else "unknown",
-                    "content": chunk
+                    "content": chunk,
                 }
         except Exception as e:
-            yield {
-                "type": "error",
-                "error": str(e)
-            }
+            yield {"type": "error", "error": str(e)}
 
     def invoke_with_callbacks(self, input_data: Dict[str, Any], callbacks=None):
         """

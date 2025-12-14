@@ -49,6 +49,7 @@ export function useChat({
     onError: onHistoryRevalidate,
     onCreated: onHistoryRevalidate,
     experimental_thread: thread,
+    fetchStateHistory: true,
   });
 
   const sendMessage = useCallback(
