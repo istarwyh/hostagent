@@ -259,20 +259,21 @@ async def execute_stream_run(
         if config:
             run_config.update(config)
 
-        # Normalize stream_mode list
+        # Normalize requested SDK stream modes
         requested_modes = stream_mode or ["updates"]
 
-        # Determine the primary agent stream mode based on requested modes
-        # Priority: messages > values > updates (most detailed first)
-        primary_mode = _select_primary_agent_mode(requested_modes)
+        # Map SDK stream modes to LangGraph agent stream modes.
+        # 一个 SDK 模式可能复用同一个 agent 模式（如 tasks→updates, checkpoints→values）。
+        agent_modes = sorted({STREAM_MODE_MAPPING[m] for m in requested_modes})
 
         # Track step for tasks/checkpoints events
         step = 0
 
-        async for chunk in agent.astream(
+        # 透传多个 agent stream_mode，按 (agent_mode, chunk) 逐个映射为 SDK 事件
+        async for agent_mode, chunk in agent.astream(
             input_data or {},
             config=run_config,
-            stream_mode=primary_mode,
+            stream_mode=agent_modes,
         ):
             step += 1
             # Emit events for each requested SDK mode
@@ -280,7 +281,7 @@ async def execute_stream_run(
                 serialized = _serialize_chunk_for_mode(
                     chunk=chunk,
                     sdk_mode=sdk_mode,
-                    agent_mode=primary_mode,
+                    agent_mode=agent_mode,
                     thread_id=thread_id,
                     run_id=run_id,
                     step=step,
