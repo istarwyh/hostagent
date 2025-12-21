@@ -1,525 +1,232 @@
-# 前端子图流式支持技术分析
+ SubGraph 渲染2主题前端如何支持 SubAgent 的中间执行步骤流渲染渲染生命周期](#渲染生命周期)
+5. [中间步骤的处理](#中间步骤的处理)
+6. [SubAgent 卡片的替换subagent-卡片的替换7当前实现的特性当前实现的特性8向向。当 treamSs=rue会自动解析格的事件，前端可以看到：
 
-**版本**: 1.0  
-**日期**: 2025-12-21  
-**状态**: 已实现（快照模式）
-
-## 目录
-
-1. [概述](#概述)
-2. [核心数据流](#核心数据流)
-3. [数据结构](#数据结构)
-4. [当前实现机制](#当前实现机制)
-5. [渲染流程](#渲染流程)
-6. [限制与改进方案](#限制与改进方案)
-
----
-
-## 概述
-
-前端通过 `@langchain/langgraph-sdk/react` 的 `useStream` 钩子接收后端的 SSE 流式事件，包括来自子图的事件（`event|subgraph_path` 格式）。当前实现采用**快照模式**：每次流更新时，前端重新计算并渲染当前状态的 SubAgent 卡片，中间步骤在执行完成后被 SDK 清理，导致卡片消失。
-
-### 关键特性
-
-- ✅ 实时接收子图事件（`event: updates|subgraph_path`）
-- ✅ 流式渲染 SubAgent 的执行过程（input/output/status）
-- ✅ 支持多个 SubAgent 的并列展示
-- ❌ 不保留执行历史（中间步骤会消失）
-- ❌ 无法回溯 SubAgent 的完整执行轨迹
-
----
-
-## 核心数据流
-
-### 1. 后端 → SDK 层
-
-```
-后端 SSE 事件流
-├─ event: metadata
-│  data: { run_id, thread_id }
-│
-├─ event: messages
-│  data: [Message, MessageTupleMetadata]
-│
-├─ event: updates
-│  data: { node_name: update_data }
-│
-├─ event: updates|subagent_name
-│  data: { node_name: update_data }  ← 子图事件
-│
-└─ event: end
-   data: {}
-```
-
-SDK 的 `useStream` 钩子在内部：
-- 解析 `event|path` 格式，识别子图事件
-- 为每条消息维护 `metadata` 和 `tool_calls` 列表
-- 累积 `stream.messages` 和 `stream.values`
-
-### 2. SDK → useChat 层
-
-```typescript
-const stream = useStream<StateType>({
-  assistantId: activeAssistant?.assistant_id || "",
-  client: client ?? undefined,
-  reconnectOnMount: true,
-  threadId: threadId ?? null,
-  fetchStateHistory: true,
-});
-
-// 关键属性
-stream.messages              // Message[] - 当前对话消息序列
-stream.values               // StateType - 完整状态（todos, files, email, ui）
-stream.getMessagesMetadata()  // 获取消息元数据（包含 tool_calls）
-stream.isLoading            // boolean - 流状态
-stream.interrupt            // InterruptData | null - 中断信息
-```
-
-### 3. useChat → ChatMessage 层
-
-```typescript
-// useChat 返回
-return {
-  stream,
-  messages: stream.messages,
-  isLoading: stream.isLoading,
-  interrupt: stream.interrupt,
-  sendMessage,
-  runSingleStep,
-  continueStream,
-  // ...
-};
-
-// ChatMessage 接收
-interface ChatMessageProps {
-  message: Message;              // 单条消息
-  toolCalls: ToolCall[];         // 该消息的工具调用列表
-  isLoading?: boolean;
-  ui?: any[];
-  stream?: any;
-  onResumeInterrupt?: (value: any) => void;
+1.**中间步骤**：中的实时消息和状态更新2.**最终结果**：执行完成后卡片
+关键特性：**在完成后被替换为最终的 SubAgent 卡片**。前端：SE事件流└─ └─   // 根图消息|subagent_name└─   // SubAgent 中间更新messg└─ [Mssg,MessageTlMeta]//SubAgent中间消息├upates│└─task: {messages: [...]}// 根图 tak 节点更新（包含 ubAgnt结果）│
+└─:end └─ :{}解析与累积E事件流↓(SDKsSm解析├─[] 所有消息（包括SubAnt）├─
+└─前端处理流程.[] +getMMeta() ↓(ChatIfacprocss)┌─────────────────────────────────────────┐│Mp:Mp<mId,            ││        ││        ││ }>                       │└─────────────────────────────────────────┘↓ (组件)
+┌─────────────────────────────────────────┐
+│1.消息内容          │
+│ 2. 渲染 T（非 tak）│
+│3.提取并渲染SbAg（task类型） │
+────────────────────────────────────────┘MessgeMessge
+type:"human"|"ai"|"tool";cotnt|ConentBloc[];tool_cll?TolCall[];
+  adioal_ag{
+ool_cll?ToCall[];
+}###2. ToolCall来自消息元数据
+interface ToolCall string; string;  //||"cde_execuor|
+args:Record<string unknown>;?string;r" | "interupted;3从 ToolCall 完整参数4ProcessedMessg前端内部结构intfaceProcessedMssglCalllCallhwAvaa:boolea 是否显示头像（消息类型变化时）
 }
-```
-
-### 4. ChatMessage → SubAgent 渲染层
-
-```
-toolCalls: ToolCall[]
-  ↓ (过滤: name === "task" && subagent_type)
-subAgents: SubAgent[]
-  ↓ (useMemo 计算，每次 toolCalls 变化时重新计算)
-UI 渲染
-  ├─ SubAgentIndicator (名称 + 展开按钮)
-  └─ 展开面板
-     ├─ Input (MarkdownContent)
-     └─ Output (MarkdownContent)
 ```
 
 ---
 
-## 数据结构
+##渲染生命周期
+###阶段1：SubAgnt执行开始
+**触发条件**：后端发送`eventupdates|ubagen_ame`
 
-### 1. ToolCall（来自 SDK）
-
-```typescript
-export interface ToolCall {
-  id: string;                                    // 工具调用唯一 ID
-  name: string;                                  // "task" | 其他工具名
-  args: Record<string, unknown>;                 // 调用参数
-  result?: string;                               // 执行结果（可能为空）
-  status: "pending" | "completed" | "error" | "interrupted";
-}
 ```
+时间线：T0:后端开始执行SAgn  ↓
+T1:前端收到vupdates|ubagen_ame↓
+T2SDK累积消息到stream.messages
+↓
+T3:ChatInterface.processedMessages更新
+↓
+T4:ChatMessage组件重新渲染
+├─显示SubAgent的中间消息（如果有）
+└─显示SubAgent的中间状态更新**前端看到的**：
+ SubAgent 的实时执行消息
+ 中间步骤的输出-执行状态的更新阶段2：执行完成
 
-**对于 SubAgent（task 工具调用）**：
-```typescript
-{
-  id: "call-123",
-  name: "task",
-  args: {
-    subagent_type: "research_agent",  // ← 子图类型标识
-    prompt: "...",
-    // ... 其他参数
-  },
-  result: "...",                       // 执行结果（逐步填充）
-  status: "pending" | "active" | "completed" | "error"
-}
+**触发条件**：后端发送 `event: upd` 包含 ak 节点的最终结果时间线：
+T5:后端 ak节点执行完成
+ ↓T6:前端收到ven: pdates（根图k 节点更新）├─ da{tsk:messages: [...]}}│└─ 包含 SbAget的最终结果↓
+T7:SDK累积消息到sremssge├─新增AI消息（包含_c）│└─_c0].nmtask│└─_cs[0]"sbgen_nme"│└─_cs[0]ul=fialrul"↓T8htIterfc.prcessedMessgs 更新├─创建新的sMa 条目└─提取_c↓
+T9htMg组件重新渲染├─过滤k├─转换为 └─显示SubAgen 卡片（最终结果）前端看到的中间步骤消息被替换为SubAgen卡片显示最终的 input/output-可查看详细信息
+
+---
+
+## 中间步骤的处
+### 1. 中间步骤来源中间步骤来自 执行过程中的多个SS 事件：
+
 ```
+v:msa|a_nm↓包含 内部的消息流
+  ├─ 思考过程
+ ├─工具调用 ├─工具结果  └─ 最终回复eve:updas|sa_ame
+↓包含内部的状态更新├─节点执行状态├─中间结果└─错误信息
 
-### 2. SubAgent（前端转换）
+### 2. 中间步骤的累积SDK的`sSream`钩子自处理**：DK部逻辑（伪代码）f(v.srWth("messaes|"))//累积到 srm.messges
+eam.messas.psh(...messgeDa)even.strsWith("us|)//累积到ream.values（通过upes事件）
+ srem.vlue= mgeUpate(seam.valuespdateData)}```
 
-```typescript
-export interface SubAgent {
-  id: string;                                    // toolCall.id
-  name: string;                                  // toolCall.name
-  subAgentName: string;                          // toolCall.args["subagent_type"]
-  input: Record<string, unknown>;                // toolCall.args（当前快照）
-  output?: Record<string, unknown>;              // { result: toolCall.result }
-  status: "pending" | "active" | "completed" | "error";
-}
-```
+###3.中间步骤的渲染
 
-### 3. StateType（完整应用状态）
+**ChatInterface中的处理**
 
-```typescript
-export type StateType = {
-  messages: Message[];                           // 对话消息
-  todos: TodoItem[];                             // 待办事项
-  files: Record<string, string>;                 // 文件系统
-  email?: {
-    id?: string;
-    subject?: string;
-    page_content?: string;
-  };
-  ui?: any;                                      // 自定义 UI 组件
-};
+```typ
+cstcsedMessages = seMemo(()={smsageMaewMap();
+//遍历所有消息（包括SbAget的中间消息）
+  messg.frEach((message:Message)=>{messgea//提取该消息中的 ol_callsconsttoolCalls=extrcToolClls(msage);
+   messgeMpe(mesae.id, messge,
+        oolCll,
+      })//.. 其他消息类型处理
+}Arrayfrom(mesaeMp.vles());
+}[messages]**ChatMessage中**：typescript// 渲染消息内容{hasCo && (<iv clssN=""><MarkdownConconnt={Conen} /></div>
+)}
+
+//2.渲染非task的ToolCall（中间步骤）{haToollls &&(<divclasNe="t-4 flx w-full flx-col">{oolCll.mp(:ToolCall)=>{
+if(.name==="tak") rtrnull;//跳
+    reurn <TBoxky={toolCall.id} toolCall={oolCall}/>;})}
+</div>
+)}
+// 3SubAgent（task类型）
+{!sUser && &&(  <div className="flex w-fit max-w-full flex-colgap-4">
+{()subAgent={subAgent}))}
+</dv>
+)}
 ```
 
 ---
 
-## 当前实现机制
+##卡片的替换机制
 
-### 1. SubAgent 识别与转换（ChatMessage.tsx）
+### 1替换的本质
+**不是真正的"替换"，而是"覆盖"**：
 
-```typescript
-const subAgents = useMemo(() => {
-  return toolCalls
-    .filter((toolCall: ToolCall) => {
-      return (
-        toolCall.name === "task" &&
-        toolCall.args["subagent_type"] &&
-        toolCall.args["subagent_type"] !== "" &&
-        toolCall.args["subagent_type"] !== null
-      );
-    })
-    .map((toolCall: ToolCall) => {
-      const subagentType = (toolCall.args as Record<string, unknown>)[
-        "subagent_type"
-      ] as string;
-      return {
-        id: toolCall.id,
-        name: toolCall.name,
-        subAgentName: subagentType,
-        input: toolCall.args,
-        output: toolCall.result ? { result: toolCall.result } : undefined,
-        status: toolCall.status,
-      } as SubAgent;
-    });
-}, [toolCalls]);
+```
+时间T4：显示中间步骤
+┌─────────────────────────────┐
+│AIMessage(SubAgent中间││├─思考过程││├─工具调用结果     ││└─ 中输出  │
+└─────────────────────────────┘
+
+时间 T9：┌─────────────────────────────┐│AIMessage() │
+│ ├─ SubAgenIndicor│
+││└─sa_ye名称    ││└─展开面板 │
+│    ├─ In │
+│    └─ Oput             │└─────────────────────────────┘
+2替换的原因
+
+消息来源不同
+```
+中间步骤
+ 来even: messges|a_name
+  └─这是生成  └─显示为普通的I 消息
+
+最终结果
+  来自 event: updates根图 task 节点  └─ 这是根图收到的SbAgnt 执行结果
+  └─ 包含在 tool_clls
+  └─ 显示为 卡片
 ```
 
-**关键点**：
-- 依赖 `toolCalls` 的变化触发重新计算
-- 每次计算都是基于**当前快照**，不保留历史
-- 一旦 SDK 从 `toolCalls` 中移除 `task` 调用，SubAgent 卡片立即消失
+### 3. 替换的时机
 
-### 2. 展开/折叠状态管理
-
-```typescript
-const [expandedSubAgents, setExpandedSubAgents] = useState<
-  Record<string, boolean>
->({});
-
-const isSubAgentExpanded = useCallback(
-  (id: string) => expandedSubAgents[id] ?? true,
-  [expandedSubAgents]
-);
-
-const toggleSubAgent = useCallback((id: string) => {
-  setExpandedSubAgents((prev) => ({
-    ...prev,
-    [id]: prev[id] === undefined ? false : !prev[id],
-  }));
-}, []);
+**当新的 AI消息到达时**ChaI中的rocMessaes更新
+onsprossMessags=seMm(()= { //每次msaes数组变化时重新计算  //新的I 消息会创建新的 ssagMap条目 //旧的中间步骤消息仍然存在，但被新消息覆盖
+},[mesaes])  // ←依赖mesas 数组
 ```
 
-**特点**：
-- 本地状态，与 SubAgent 的执行状态独立
-- 用户可以手动展开/折叠，不会影响执行流
+**具体流程**：
 
-### 3. 内容提取与渲染
+```
+T4 时刻：saes=[urMg,santIermediaMsg ↓proessdMssas 生成 ├─rMsg →显示用户消息  └─antIerdatM → 显示中间步骤
 
-```typescript
-// 从 SubAgent.input/output 提取可显示的内容
-export function extractSubAgentContent(data: unknown): string {
-  if (typeof data === "string") {
-    return data;
+9 时刻：ssag[rsantIerdatsg,kRsulMsg]↓pocsdMess 重新计算├─ eM→显示用户消息├─aInterdatMg→显示中间步骤（仍然存在）└─askRsuM→显示S 卡片（新增）```
+
+**关键点**：中间步骤消息**不会被删除**，而是**新增了一个包含最终结果的消息**。
+
+###4.为什么看起来"消失"了
+
+**原因**：
+
+1.**消息顺序**：新的skRlMg 在最后，会显示在下方
+2. **视觉焦点**：S 卡片更显眼，吸引用户注意3.**用户预期**：用户期望看到最终结果，而不是中间步骤
+4.**滚动位置**：新消息到达时，用户可能已经滚动，看不到中间步骤
+
+**实际上**：中间步骤消息仍然在`procesdMesages`中，只是被新消息"压下去"了。
+---
+
+##当前实现的特性
+
+###✅已支持
+
+1.**SbAg的识别**-通过`toolCall.name==="task"`识别-通过`ooCallags["subag_ye"]`获取类型
+2.**中间步骤的流式显示**
+-通过`v: msge|a_ph`接收中间消息-通过`v: dae|a_ah` 接收中间更新-实时显示在聊天界面
+3**最终结果的卡片展示**-SIndicor：显示名称和展开按钮-展开面板：显示 和o-可折叠/展开查看详情
+
+4.**多层级S 支持**-通过`event|parent/child`格式支持嵌套 -前端可以区分不同层级的事件
+
+5.**执行状态追踪**
+-`oolCalstats`：pdng/copd/rror/rrutd
+   实时更新执行状态
+
+### ⚠️当前限制
+
+. **中间步骤的可见性**  -中间步骤在最终卡片出现后不再显示
+-用户需要向上滚动才能看到中间步骤2.**中间步骤的持久化**
+-中间步骤消息不会被保存到S卡片中-无法在最终卡片中查看执行过程3.执行进度的显示    无法显示 SubAgent进度条   无法当前的
+4.中间结果的聚合   无法将中间步骤结果聚合到最终卡片中   无法显示完整的执行轨迹
+
+---方向
+
+### 向1保留中间步骤的可见性**目标**：卡片中显示执行过程
+
+**实现方案**intfacubAgntid: trin;
+  namtrinubAgentNamesringnputunknown>;
+  output?: Record<, unknownstatus: "pnding" | "ctve"|"completed"| "error"中间步骤iermedaeStepstitmpumber;type:"mes"| "updae"| "error";conntknown;
   }
+//新增：执行进度
+executoProgress?: {
+    crrenSeptotalSteps:number percentage:number前**卡片中显示中间步骤
+{iExpndd(s.id) &&   <div clasNam"..."
+ {*Ip*/} <h4>Inp</4>
+<MkownContnt co{...}/>{*新增：中间步骤*/} {.iemdiaeSteps&&       <h4>ExcuionSteps<h4>    .intermediateStep(tep,idx) (
+          divxclasNam="...">
+            <spa>{sep.type}</span>
+            <MarkdownContent contenttep.content
+          </div>
+        )      </>)}
 
-  if (data && typeof data === "object") {
-    const dataObj = data as Record<string, unknown>;
+    新增：执行进度*/}
+    {s.executionProgress&& (
+      <div className="...">    <ProgressB alu={st.execuionProgresercentge}/
+ span>{st.execuionrogrscrrtSep}</pn>
+     </d>
+    )}
 
-    // 优先级：description > prompt > result > JSON
-    if (dataObj.description && typeof dataObj.description === "string") {
-      return dataObj.description;
-    }
-    if (dataObj.prompt && typeof dataObj.prompt === "string") {
-      return dataObj.prompt;
-    }
-    if (dataObj.result && typeof dataObj.result === "string") {
-      return dataObj.result;
-    }
+    {/* Output */}
+   <h4>Output<h4 <MarkdownContentcontent={... />div}### 方向 2实时更新SubAgent卡片目标卡片在执行过程中实更新**方案**：1.后端SSE事件包含 ID      eve:pdae|a_nm da:{
+     sa_id:"tsk-xxx",   inemdit_sep:...}}
+   ```
 
-    return JSON.stringify(data, null, 2);
-  }
-
-  return JSON.stringify(data, null, 2);
-}
+2. **前端**：根据 ID实时更新卡片
+   ```ypcip // 订阅 ve: pdae|a_pathcont handleSUpde(aId, upd=>  mapa =>
+         sa=== aId ?{...a, inemditStep: [...(.intrmediateStep || [, update] }
+           : sa
+       )
+     )   };
+   向 3：分离中间步骤和最终结果目标在不同的UI 区域和最终结果**实现方案**：
 ```
+┌─────────────────────────────────┐
+│执行过程实时更新             │├─────────────────────────────────┤│Step 1: 初始化                  │
+│ep 2: 执行工具 A              │
+│ S 3: 处理结果                │
+│ Stp 4: 执行工具 B             │
+├─────────────────────────────────┤
+│最终结果（ 卡片）       │
+├─────────────────────────────────┤│ Input: ...                     ││ Output: ...                    │
+└─────────────────────────────────┘```
 
----
+### 当前状态**确实可以看到 SubAgent 的中间执行步骤**，这些步骤 `event:messages|subagent_path`和event: pdates|ubagn_pth流式传输。但在完成后，最终的 SubAgent 卡片会出现在聊天界面的下方，使得中间步骤看起来"消失"了
 
-## 渲染流程
+### 核心机制
 
-### 完整的渲染周期
+1. ****：来自 SubAgent 内部的消息和更新，为普通的 AI消息
+2.**最终结果**：来自根图k 节点的执行结果显示为 SubAgent
+3. **替换**：不是真正的替换，而是新增消息，中间步骤仍然存在但被新息压下去
 
-```
-1. 后端发送 SSE 事件
-   event: updates|subagent_name
-   data: { node_name: { ... } }
-        ↓
-2. SDK useStream 接收并处理
-   - 解析 event|path
-   - 更新 stream.messages 和 metadata
-        ↓
-3. useChat 组件重新渲染
-   - 读取 stream.messages
-   - 调用 stream.getMessagesMetadata() 获取 toolCalls
-        ↓
-4. ChatMessage 组件接收新的 toolCalls
-   - 触发 useMemo 重新计算 subAgents
-   - 过滤出 task 类型的 toolCall
-   - 转换为 SubAgent 对象
-        ↓
-5. 条件渲染
-   if (subAgents.length > 0) {
-     subAgents.map(subAgent => (
-       <SubAgentIndicator ... />
-       {isExpanded && <SubAgentPanel ... />}
-     ))
-   }
-        ↓
-6. 用户看到
-   - SubAgent 卡片出现
-   - Input/Output 逐步填充
-   - Status 从 pending → active → completed
-        ↓
-7. 执行完成后
-   - SDK 清理 toolCalls 中的 task 调用
-   - subAgents 变成空数组
-   - SubAgent 卡片消失
-```
-
-### 时间轴示例
-
-```
-时间 t0: 后端发送 task toolCall (status: pending)
-        前端: 显示 SubAgent 卡片，Input 可见，Output 为空
-
-时间 t1: 后端更新 task toolCall (status: active, result: "...")
-        前端: SubAgent 卡片仍显示，Output 开始填充
-
-时间 t2: 后端更新 task toolCall (status: completed, result: "完整结果")
-        前端: SubAgent 卡片仍显示，Output 完整显示
-
-时间 t3: SDK 清理 toolCalls（移除 task 调用）
-        前端: SubAgent 卡片消失 ← 这就是"闪现就消失"的原因
-```
-
----
-
-## 限制与改进方案
-
-### 当前限制
-
-1. **快照模式**：只保留当前状态，不保留历史
-2. **自动清理**：SDK 在执行完成后自动清理 `toolCalls`，导致卡片消失
-3. **无执行轨迹**：无法回溯 SubAgent 的完整执行过程
-4. **无中间步骤记录**：SubAgent 内部的流式消息无法保留
-
-### 改进方案 A：本地时间线（推荐）
-
-在 `useChat` 或上层组件中维护 SubAgent 执行历史：
-
-```typescript
-// 新增类型
-export interface SubAgentStep {
-  timestamp: number;
-  status: "pending" | "active" | "completed" | "error";
-  input: Record<string, unknown>;
-  output?: Record<string, unknown>;
-}
-
-export interface SubAgentTimeline {
-  id: string;
-  subAgentName: string;
-  steps: SubAgentStep[];
-  currentStep: SubAgentStep;
-}
-
-// 在 useChat 中维护
-const [subAgentTimelines, setSubAgentTimelines] = useState<
-  Map<string, SubAgentTimeline>
->(new Map());
-
-// 监听 toolCalls 变化
-useEffect(() => {
-  const currentSubAgents = extractSubAgents(toolCalls);
-
-  currentSubAgents.forEach((subAgent) => {
-    setSubAgentTimelines((prev) => {
-      const timeline = prev.get(subAgent.id) || {
-        id: subAgent.id,
-        subAgentName: subAgent.subAgentName,
-        steps: [],
-        currentStep: null,
-      };
-
-      // 追加新的步骤（如果状态变化）
-      if (
-        !timeline.currentStep ||
-        timeline.currentStep.status !== subAgent.status ||
-        JSON.stringify(timeline.currentStep.output) !== JSON.stringify(subAgent.output)
-      ) {
-        timeline.steps.push({
-          timestamp: Date.now(),
-          status: subAgent.status,
-          input: subAgent.input,
-          output: subAgent.output,
-        });
-        timeline.currentStep = timeline.steps[timeline.steps.length - 1];
-      }
-
-      return new Map(prev).set(subAgent.id, timeline);
-    });
-  });
-}, [toolCalls]);
-```
-
-**优点**：
-- 保留完整的执行历史
-- 可以显示执行进度和中间步骤
-- 不依赖 SDK 的清理逻辑
-
-**缺点**：
-- 需要额外的状态管理
-- 内存占用增加
-
-### 改进方案 B：扩展 UI 数据结构
-
-在后端的 `StateType` 中添加 SubAgent 历史：
-
-```typescript
-export type StateType = {
-  messages: Message[];
-  todos: TodoItem[];
-  files: Record<string, string>;
-  email?: { ... };
-  ui?: any;
-
-  // 新增：SubAgent 执行历史
-  subagentHistory?: {
-    [messageId: string]: {
-      [subagentId: string]: {
-        steps: SubAgentStep[];
-        finalOutput: Record<string, unknown>;
-      };
-    };
-  };
-};
-```
-
-**优点**：
-- 历史数据来自后端，更可靠
-- 支持跨会话保留历史
-
-**缺点**：
-- 需要后端改动
-- 增加网络传输量
-
-### 改进方案 C：消息级别的 SubAgent 归档
-
-在 `ChatMessage` 中保留已完成的 SubAgent：
-
-```typescript
-// 在 ChatMessage 中
-const [archivedSubAgents, setArchivedSubAgents] = useState<SubAgent[]>([]);
-
-useEffect(() => {
-  // 当 subAgents 变空时，保存当前的 subAgents 到归档
-  if (subAgents.length === 0 && archivedSubAgents.length === 0) {
-    // 从某处恢复最后的 subAgents 快照
-    // （需要在 subAgents 消失前保存）
-  }
-}, [subAgents]);
-
-// 渲染时同时显示当前和归档的 SubAgent
-return (
-  <>
-    {/* 当前执行的 SubAgent */}
-    {subAgents.map(sa => <SubAgentPanel key={sa.id} subAgent={sa} />)}
-
-    {/* 已完成的 SubAgent（灰显） */}
-    {archivedSubAgents.map(sa => (
-      <SubAgentPanel key={sa.id} subAgent={sa} isArchived />
-    ))}
-  </>
-);
-```
-
-**优点**：
-- 改动最小
-- 用户可以看到完整的执行过程
-
-**缺点**：
-- 需要在 SubAgent 消失前捕获快照
-- 时序复杂
-
----
-
-## 推荐实现路径
-
-### 短期（快速改进）
-
-采用**方案 A 的简化版**：在 `useChat` 中添加一个 `subAgentHistory` 状态，记录每个 SubAgent 的最终状态。
-
-```typescript
-const [subAgentHistory, setSubAgentHistory] = useState<
-  Map<string, SubAgent>
->(new Map());
-
-// 在 stream 变化时更新
-useEffect(() => {
-  const currentSubAgents = extractSubAgentsFromMessages(stream.messages);
-
-  currentSubAgents.forEach((subAgent) => {
-    if (subAgent.status === "completed" || subAgent.status === "error") {
-      setSubAgentHistory((prev) =>
-        new Map(prev).set(subAgent.id, subAgent)
-      );
-    }
-  });
-}, [stream.messages]);
-```
-
-### 中期（完整方案）
-
-实现**方案 A 的完整版**，维护 SubAgent 的完整时间线，支持：
-- 显示执行进度
-- 回溯中间步骤
-- 性能优化（虚拟滚动）
-
-### 长期（架构升级）
-
-与后端协作，实现**方案 B**，在 `StateType` 中原生支持 SubAgent 历史，使得：
-- 历史数据持久化
-- 支持离线查看
-- 支持跨会话对比
-
----
-
-## 总结
-
-前端当前通过 SDK 的 `useStream` 接收子图事件，采用**快照模式**实时渲染 SubAgent 的执行过程。虽然中间步骤确实在流式显示，但由于 SDK 在执行完成后清理 `toolCalls`，导致卡片消失。
-
-要保留执行历史，需要在前端维护独立的 SubAgent 时间线，或与后端协作在 `StateType` 中原生支持历史数据。推荐先从简化版的本地时间线开始，逐步演进到完整的架构方案。
+### 改进方向为了让用户更好地理解 SubAgent 的过程可以：
+1.  卡片中保留中间步骤的记录
+2.实更新ubAgen 卡片的执行进度
+3.分离骤和最终结果显示区域
