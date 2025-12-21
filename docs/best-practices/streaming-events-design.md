@@ -575,6 +575,270 @@ async for agent_mode, chunk in agent.astream(
 
 ---
 
+## Subgraphs 流式支持
+
+### 概述
+
+当 Agent 包含嵌套的子图（Nested Agents / Subgraphs）时，启用 `stream_subgraphs=True` 可以接收来自所有层级的流式事件。后端需要通过 **事件名后缀** 来区分不同子图层级的输出。
+
+### 核心设计
+
+#### 请求参数
+
+在 `RunStreamRequest` 中添加 `stream_subgraphs` 字段：
+
+```python
+class RunStreamRequest(BaseModel):
+    assistant_id: str
+    input: Optional[dict] = None
+    stream_mode: list[str] = Field(default_factory=lambda: ["updates"])
+    config: Optional[dict] = None
+    metadata: Optional[dict] = None
+    interrupt_before: Optional[list[str]] = None
+    interrupt_after: Optional[list[str]] = None
+    multitask_strategy: Optional[str] = None
+    stream_subgraphs: bool = False  # ← 新增：启用子图流
+```
+
+#### 前端传递
+
+在所有 `stream.submit()` 调用中传递 `streamSubgraphs: true`：
+
+```typescript
+stream.submit(
+  { messages: [newMessage] },
+  {
+    optimisticValues: (prev) => ({
+      messages: [...(prev.messages ?? []), newMessage],
+    }),
+    config: { recursion_limit: 100 },
+    streamSubgraphs: true,  // ← 启用子图流
+  }
+);
+```
+
+### 数据流与事件名映射
+
+#### LangGraph 返回结构
+
+当 `subgraphs=True` 时，`agent.astream()` 返回两种形式的数据：
+
+**形式 1：根图输出（无 namespace）**
+```python
+(agent_mode: str, chunk: Any)
+```
+
+**形式 2：子图输出（带 namespace）**
+```python
+# 可能的结构 A: ((namespace_tuple), (agent_mode, chunk))
+# 可能的结构 B: (namespace_tuple, agent_mode, chunk)
+
+# 其中 namespace_tuple 是一个元组，如：
+# ("subgraph_name",)
+# ("parent", "child")
+```
+
+#### 事件名后缀规则
+
+根据 namespace 生成事件名后缀，遵循 `event|subgraph_path` 格式：
+
+```
+根图事件：
+  event: updates
+  event: messages
+  event: values
+
+子图事件：
+  event: updates|subgraph_name
+  event: messages|subgraph_name
+  event: values|parent/child
+```
+
+### 实现细节
+
+#### 1. 解包逻辑
+
+在 `execute_stream_run()` 中兼容多种 namespace 返回形式：
+
+```python
+async for agent_chunk in agent.astream(
+    input_data or {},
+    config=run_config,
+    stream_mode=agent_modes,
+    subgraphs=stream_subgraphs,  # ← 透传参数
+):
+    agent_mode: str
+    chunk: Any
+    subgraph_path = ""
+
+    if stream_subgraphs and isinstance(agent_chunk, (list, tuple)):
+        # 形式 A: ((namespace_tuple), (agent_mode, chunk))
+        if (
+            len(agent_chunk) == 2
+            and isinstance(agent_chunk[0], (list, tuple))
+            and isinstance(agent_chunk[1], (list, tuple))
+        ):
+            namespace, payload = agent_chunk
+            subgraph_path = _format_subgraph_path(namespace)
+            agent_mode, chunk = payload
+        # 形式 B: (namespace_tuple, agent_mode, chunk)
+        elif (
+            len(agent_chunk) == 3
+            and isinstance(agent_chunk[0], (list, tuple))
+            and isinstance(agent_chunk[1], str)
+        ):
+            namespace, agent_mode, chunk = agent_chunk
+            subgraph_path = _format_subgraph_path(namespace)
+        else:
+            # 回退为普通处理
+            agent_mode, chunk = agent_chunk
+    else:
+        # 不启用 subgraphs，普通处理
+        agent_mode, chunk = agent_chunk
+```
+
+#### 2. 路径格式化
+
+```python
+def _format_subgraph_path(namespace: Any) -> str:
+    """
+    将 LangGraph namespace 元组转换为路径字符串。
+
+    示例:
+      ("subgraph_name",) → "subgraph_name"
+      ("parent", "child") → "parent/child"
+      None → ""
+    """
+    if isinstance(namespace, (list, tuple)):
+        parts = [str(p) for p in namespace if str(p)]
+        return "/".join(parts)
+    if namespace is None:
+        return ""
+    return str(namespace)
+```
+
+#### 3. 事件名后缀
+
+```python
+def _with_subgraph_suffix(event_type: str, subgraph_path: str) -> str:
+    """
+    为事件类型添加子图路径后缀。
+
+    示例:
+      ("updates", "") → "updates"
+      ("updates", "subgraph_name") → "updates|subgraph_name"
+      ("messages", "parent/child") → "messages|parent/child"
+    """
+    if not subgraph_path:
+        return event_type
+    return f"{event_type}|{subgraph_path}"
+```
+
+#### 4. SSE 事件生成
+
+```python
+for sdk_mode in requested_modes:
+    serialized = _serialize_chunk_for_mode(
+        chunk=chunk,
+        sdk_mode=sdk_mode,
+        agent_mode=agent_mode,
+        thread_id=thread_id,
+        run_id=run_id,
+        step=step,
+    )
+    if serialized is not None:
+        # SDK 约定：event 名称规范化
+        event_type = (
+            "messages" if sdk_mode in ("messages", "messages-tuple") else sdk_mode
+        )
+        # 添加子图路径后缀
+        yield format_sse_event(
+            _with_subgraph_suffix(event_type, subgraph_path),
+            serialized,
+        )
+```
+
+### 完整示例
+
+#### 后端请求处理
+
+```python
+# 前端请求
+POST /threads/{thread_id}/runs/stream
+{
+  "assistant_id": "researchAgent",
+  "input": {"messages": [...]},
+  "stream_mode": ["updates", "messages"],
+  "stream_subgraphs": true
+}
+
+# 后端处理流程
+1. 透传 stream_subgraphs=True 给 agent.astream()
+2. 遍历返回的 agent_chunk
+3. 检测 namespace 并格式化为路径
+4. 为每个请求的 stream_mode 生成事件
+5. 添加子图路径后缀到事件名
+```
+
+#### SSE 流输出
+
+```
+event: metadata
+data: {"run_id": "...", "thread_id": "..."}
+
+event: updates
+data: {"root_node": {...}}
+
+event: messages
+data: [{"type": "AIMessageChunk", ...}, {...}]
+
+event: updates|research_subgraph
+data: {"search_node": {...}}
+
+event: messages|research_subgraph
+data: [{"type": "AIMessageChunk", ...}, {...}]
+
+event: updates|research_subgraph/web_search
+data: {"web_search_node": {...}}
+
+event: end
+data: {}
+```
+
+#### 前端消费
+
+```typescript
+import { useStream } from "@langchain/langgraph-sdk/react";
+
+const stream = useStream<StateType>({
+  assistantId: "researchAgent",
+  client: client,
+  threadId: threadId,
+});
+
+// SDK 自动处理 event|path 格式
+// 根图事件和子图事件都会被正确解析和累积
+const messages = stream.messages;  // 包含所有层级的消息
+const values = stream.values;      // 包含所有层级的状态
+```
+
+### 向后兼容性
+
+当 `stream_subgraphs=False`（默认值）时：
+
+- 后端跳过 namespace 解包逻辑
+- 所有事件的 `subgraph_path` 为空字符串
+- 事件名保持原样（如 `updates`、`messages`）
+- 行为与之前完全一致
+
+### 性能考虑
+
+- ✓ 启用 `subgraphs=True` 会增加 LangGraph 的处理开销（需要追踪所有层级）
+- ✓ 对网络和序列化的影响很小
+- ✓ 建议仅在需要时启用，避免不必要的开销
+
+---
+
 ## 常见问题与解决方案
 
 ### 问题 1：前端不显示流式消息
