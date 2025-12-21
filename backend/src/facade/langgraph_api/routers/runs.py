@@ -33,6 +33,7 @@ async def stream_run(request: RunStreamRequest):
             assistant_id=request.assistant_id,
             input_data=request.input,
             stream_mode=request.stream_mode,
+            stream_subgraphs=request.stream_subgraphs,
             config=request.config,
         ):
             yield event

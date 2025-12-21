@@ -212,11 +212,27 @@ def _select_primary_agent_mode(requested_modes: list[str]) -> str:
     return "updates"
 
 
+def _format_subgraph_path(namespace: Any) -> str:
+    if isinstance(namespace, (list, tuple)):
+        parts = [str(p) for p in namespace if str(p)]
+        return "/".join(parts)
+    if namespace is None:
+        return ""
+    return str(namespace)
+
+
+def _with_subgraph_suffix(event_type: str, subgraph_path: str) -> str:
+    if not subgraph_path:
+        return event_type
+    return f"{event_type}|{subgraph_path}"
+
+
 async def execute_stream_run(
     thread_id: str,
     assistant_id: str,
     input_data: Optional[dict] = None,
     stream_mode: Optional[list[str]] = None,
+    stream_subgraphs: bool = False,
     config: Optional[dict] = None,
 ) -> AsyncIterator[str]:
     """
@@ -269,12 +285,44 @@ async def execute_stream_run(
         # Track step for tasks/checkpoints events
         step = 0
 
-        # 透传多个 agent stream_mode，按 (agent_mode, chunk) 逐个映射为 SDK 事件
-        async for agent_mode, chunk in agent.astream(
+        # 透传多个 agent stream_mode，按 (agent_mode, chunk) / (namespace, agent_mode, chunk)
+        # 逐个映射为 SDK 事件
+        async for agent_chunk in agent.astream(
             input_data or {},
             config=run_config,
             stream_mode=agent_modes,
+            subgraphs=stream_subgraphs,
         ):
+            agent_mode: str
+            chunk: Any
+            subgraph_path = ""
+            if stream_subgraphs and isinstance(agent_chunk, (list, tuple)):
+                # 兼容两种形态：
+                # 1) ((namespace_tuple), (agent_mode, chunk))
+                # 2) (namespace_tuple, agent_mode, chunk)
+                if (
+                    len(agent_chunk) == 2
+                    and isinstance(agent_chunk[0], (list, tuple))
+                    and isinstance(agent_chunk[1], (list, tuple))
+                ):
+                    namespace, payload = agent_chunk
+                    subgraph_path = _format_subgraph_path(namespace)
+                    agent_mode, chunk = payload
+                elif (
+                    len(agent_chunk) == 3
+                    and isinstance(agent_chunk[0], (list, tuple))
+                    and isinstance(agent_chunk[1], str)
+                ):
+                    namespace, agent_mode, chunk = agent_chunk
+                    subgraph_path = _format_subgraph_path(namespace)
+                else:
+                    # 回退为普通 (agent_mode, chunk) 逻辑
+                    agent_mode, chunk = agent_chunk  # type: ignore[misc]
+            else:
+                # 不开启 subgraphs 时，LangGraph 通常返回 (agent_mode, chunk)
+                # 如有结构变化，抛给后续序列化逻辑处理
+                agent_mode, chunk = agent_chunk  # type: ignore[misc]
+
             step += 1
             # Emit events for each requested SDK mode
             for sdk_mode in requested_modes:
@@ -292,7 +340,10 @@ async def execute_stream_run(
                     event_type = (
                         "messages" if sdk_mode in ("messages", "messages-tuple") else sdk_mode
                     )
-                    yield format_sse_event(event_type, serialized)
+                    yield format_sse_event(
+                        _with_subgraph_suffix(event_type, subgraph_path),
+                        serialized,
+                    )
 
         # Send end event
         yield format_sse_event("end", {})

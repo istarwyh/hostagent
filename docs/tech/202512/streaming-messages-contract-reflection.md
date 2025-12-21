@@ -271,48 +271,71 @@ SDK 支持：
 
 ### 5.3 Subgraphs / Nested Agents
 
-SDK 支持：
+**调研结果**：当前不支持子图流式输出。
 
-- `streamSubgraphs: true`
-- `SubgraphMessagesStreamEvent` / `SubgraphUpdatesStreamEvent`
+**SDK 支持情况**：
+- `useStream` hook 支持 `streamSubgraphs?: boolean` 配置（默认 `false`）
+- 前端代码中未启用此功能：`useChat` hook 没有设置 `streamSubgraphs: true`
+- 子图事件使用特殊的 `AsSubgraph<TEvent>` 类型格式：
+  ```ts
+  type AsSubgraph<TEvent extends {
+    id?: string;
+    event: string;
+    data: unknown;
+  }> = {
+    id?: TEvent["id"];
+    event: TEvent["event"] | `${TEvent["event"]}|${string}`;
+    data: TEvent["data"];
+  };
+  ```
+
+**当前实现状态**：
+- ❌ 前端未启用 `streamSubgraphs` 配置
+- ❌ 后端未实现子图事件流式输出
+- ❌ 没有 `SubgraphValuesStreamEvent`、`SubgraphUpdatesStreamEvent` 等事件处理
 
 **潜在问题**：
-
-- 我们的 `researchAgent` 有 sub-agents（`critique-agent`, `research-agent`）
-- 当 `streamSubgraphs: true` 时，后端是否能正确发送子图的事件？
-- 事件的 `data` 结构是否符合 `AsSubgraph<T>` 的定义？
+- 如果 Agent 调用子图（sub-agents），这些子图的执行过程无法被前端实时观察
+- 用户无法看到嵌套 Agent 的执行状态和消息流
 
 **建议**：
-
-- 在契约文档中补充 subgraphs 相关说明
-- 如暂不支持，应在 API 文档中明确标注"当前版本不支持 streamSubgraphs"
+- 在 `useChat` hook 中添加 `streamSubgraphs: true` 配置
+- 后端 `execute_stream_run` 需要处理来自子图的事件，并按 SDK 的 `AsSubgraph` 格式包装
+- 在契约文档中明确标注当前不支持子图流式输出的限制
 
 ### 5.4 Metadata / Config 字段的完整性
 
-SDK 在很多地方都期望 `metadata` / `config` 包含特定字段，例如：
+**调研结果**：部分支持，但可能不完整。
 
+**SDK 期望的字段**：
 - `MessageTupleMetadata` 应包含：
   - `langgraph_step`
   - `langgraph_node`
   - `langgraph_triggers`
   - `langgraph_path`
   - `langgraph_checkpoint_ns`
+  - `checkpoint_ns`
   - 等等
 
-**潜在问题**：
+**当前实现状态**：
+- ✅ 后端确实传递 LangGraph 内部的 metadata（包括上述字段）
+- ✅ 前端 SDK 能收到这些字段
+- ❓ 字段完整性和命名是否与 SDK 期望完全一致？
 
-- 我们目前直接把 LangGraph 内部的 metadata 透传出去
-- 但如果某些字段缺失或命名不一致，SDK 的某些功能可能失效（例如分支树构建、消息溯源）
+**潜在问题**：
+- LangGraph 内部 metadata 字段可能与 SDK 期望的字段有细微差异
+- 某些字段缺失可能导致前端 SDK 的某些功能（如分支树构建、消息溯源）失效
 
 **建议**：
-
-- 在契约文档中列出 `MessageTupleMetadata` 的必需字段
-- 在 `_serialize_message` 或 SSE 发送前，做一次字段完整性检查
+- 在契约文档中列出 `MessageTupleMetadata` 的必需字段清单
+- 在 SSE 发送前做字段完整性校验，确保关键字段存在
+- 如有字段缺失，考虑在后端补充或转换
 
 ### 5.5 Checkpoint 结构的细节
 
-SDK 的 `Checkpoint` 类型定义：
+**调研结果**：已实现基本支持，但 `checkpoint_map` 字段使用待确认。
 
+**SDK 的 `Checkpoint` 类型定义**：
 ```ts
 interface Checkpoint {
   thread_id: string;
@@ -322,57 +345,122 @@ interface Checkpoint {
 }
 ```
 
-**潜在问题**：
+**当前实现状态**：
+- ✅ 在 `/threads/{id}/history` 中已对齐基本结构
+- ✅ 在 `/threads/{id}/runs/stream` 的 `checkpoint` 参数处理中也对齐了
+- ❓ `checkpoint_map` 字段当前设置为 `null`，其语义和用途待确认
 
-- 我们在 `/threads/{id}/history` 中已经对齐了这个结构
-- 但在其他地方（如 `stream.submit` 的 `checkpoint` 参数、`ThreadState.parent_checkpoint`）是否也严格遵守？
-- `checkpoint_map` 的语义是什么？我们是否需要填充它？
+**潜在问题**：
+- `checkpoint_map` 字段的用途是什么？LangGraph Cloud 是否使用它？
+- 如果需要填充 `checkpoint_map`，当前实现可能不完整
 
 **建议**：
-
-- 查阅 LangGraph Cloud 的实现或官方示例，确认 `checkpoint_map` 的用途
+- 查阅 LangGraph Cloud 或官方示例，确认 `checkpoint_map` 的用途
 - 如暂时用不到，可以保持 `null`，但要在文档中说明
+- 考虑在契约脚本中添加 checkpoint 结构校验
 
 ### 5.6 Error Handling & Retry
 
-SDK 支持：
+**调研结果**：已实现基本支持，但可能需要完善错误信息格式。
 
-- `ErrorStreamEvent`
+**SDK 支持**：
+- `ErrorStreamEvent`：`{ event: "error", data: { error: string, message: string } }`
 - `onError` callback
 - 自动重连（`reconnectOnMount`）
 
-**潜在问题**：
+**当前实现状态**：
+- ✅ 后端在 `execute_stream_run` 的 `except` 块中发送 `event: error`
+- ✅ 包含 `error` 和 `message` 字段
+- ❓ 错误信息是否足够详细（是否需要 `code`, `stack` 等字段？）
 
-- 后端抛出异常时，是否正确发送 `event: error` 且 `data` 符合 `ErrorStreamEvent`？
-- 错误信息是否足够详细（包含 `code`, `message`, 可能的 `stack`）？
+**潜在问题**：
+- SDK 可能期望更详细的错误信息格式
+- 重连机制是否在前端正确配置和处理
 
 **建议**：
-
-- 在 `execute_stream_run` 的 `except` 块中，确保：
-  - `event: error`
-  - `data: { message: str, code: str }`
-- 在契约脚本中加一个"故意触发错误"的测试用例
+- 在契约脚本中故意触发错误用例，验证错误事件的格式
+- 检查前端的 `onError` callback 是否正确处理错误事件
+- 如需要，扩展错误信息包含更多诊断字段
 
 ### 5.7 Thread / Run 生命周期管理
 
-SDK 期望：
+**调研结果**：Thread 状态管理基本实现，但可能需要完善。
 
+**SDK 期望的状态**：
 - `ThreadStatus`: `"idle"` / `"busy"` / `"interrupted"` / `"error"`
 - `RunStatus`: `"pending"` / `"running"` / `"success"` / `"error"` / `"timeout"` / `"interrupted"`
 
-**潜在问题**：
+**当前实现状态**：
+- ✅ `/threads/{id}` 返回的 `status` 字段反映线程状态
+- ❓ 是否有完整的状态机管理（idle → busy → idle 的转换）
+- ❓ 流结束时是否正确更新状态
+- ❓ interrupt 状态是否正确维护
 
-- 我们的 `/threads/{id}` 返回的 `status` 是否正确反映线程状态？
-- 流式运行结束后，线程状态是否从 `"busy"` 变回 `"idle"`？
+**潜在问题**：
+- 线程状态可能没有随 run 生命周期正确更新
+- interrupt 后的状态转换逻辑可能不完整
 
 **建议**：
-
 - 在 checkpointer 或 run_service 中维护线程状态
 - 在契约脚本中验证状态转换的正确性
+- 确保 interrupt 和 resume 操作正确更新状态
+
+### 5.8 其他 StreamMode 的 data 结构支持
+
+**调研结果**：已实现 `updates`、`values`、`tasks`、`checkpoints`，但 `debug`、`custom`、`events` 待完善。
+
+**SDK 支持的完整 StreamMode**：
+- `"values"`: `ValuesStreamEvent<StateType>` ✅ 已实现
+- `"messages"`: `MessagesTupleStreamEvent` ✅ 已实现
+- `"messages-tuple"`: `MessagesTupleStreamEvent` ✅ 已实现
+- `"updates"`: `UpdatesStreamEvent<UpdateType>` ✅ 已实现
+- `"tasks"`: `TasksStreamEvent` ✅ 已实现
+- `"checkpoints"`: `CheckpointsStreamEvent<StateType>` ✅ 已实现
+- `"debug"`: `DebugStreamEvent` ❓ 待验证
+- `"custom"`: `CustomStreamEvent<T>` ❓ 待验证
+- `"events"`: `EventsStreamEvent` ❓ 待验证
+
+**当前实现状态**：
+- ✅ 后端已支持所有模式的 SSE 事件生成
+- ✅ `_serialize_chunk_for_mode` 函数处理不同模式的序列化
+- ❓ `debug`、`custom`、`events` 模式的数据结构是否完全符合 SDK 期望？
+
+**潜在问题**：
+- 前端可能从未请求过 `debug`、`custom`、`events` 模式
+- 这些模式的 `data` 结构可能与 SDK 期望有细微差异
+
+**建议**：
+- 在契约脚本中添加对所有 StreamMode 的测试用例
+- 验证每种模式的事件数据结构是否符合 SDK 类型定义
 
 ---
 
-## 6. 改进建议：如何系统性避免契约漂移
+## 5.9 Interrupt / Command 相关契约
+
+**调研结果**：基本支持，但可能不完整。
+
+**SDK 支持的 Command**：
+- `stream.submit(null, { command: { goto: "__end__" } })`
+- `stream.submit(null, { command: { resume: value } })`
+- `interruptBefore` / `interruptAfter` 配置
+- `stream.interrupt` 字段
+
+**当前实现状态**：
+- ✅ 前端 `useChat` 中有 `interruptBefore: ["tools"]` 和 `interruptAfter` 的使用
+- ✅ 后端接受 `command` 参数
+- ❓ interrupt 后的状态管理和 resume 逻辑是否完整
+
+**潜在问题**：
+- interrupt 后的线程状态转换
+- resume 命令的处理逻辑
+- interrupt 信息的持久化
+
+**建议**：
+- 添加完整的 interrupt E2E 测试用例
+- 验证 interrupt 和 resume 的状态转换
+- 确保 interrupt 信息正确传递给前端
+
+---
 
 ### 6.1 设计阶段
 

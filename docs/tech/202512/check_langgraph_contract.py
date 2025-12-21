@@ -138,6 +138,7 @@ def check_thread_stream_and_history(base_url: str) -> None:
     "assistant_id": "researchAgent",
     "input": {"messages": [{"role": "user", "content": "契约自检 ping"}]},
     "stream_mode": ["updates"],
+    "stream_subgraphs": True,
   }
   # 这里只验证 HTTP 层是否 2xx，不完全消费 SSE 流内容
   url = f"{base_url.rstrip('/')}/threads/{thread_id}/runs/stream"
@@ -153,9 +154,21 @@ def check_thread_stream_and_history(base_url: str) -> None:
   except Exception as exc:  # pragma: no cover
     raise SystemExit(f"stream_run failed: {exc}\nBody: {resp.text}") from exc
 
-  # 简单消费几行，避免阻塞
-  for _ in range(3):
-    _ = resp.raw.readline()
+  # 简单消费部分 SSE，确认 server 能输出 subgraph 事件（event: updates|...）
+  saw_subgraph_event = False
+  for _ in range(80):
+    line = resp.raw.readline()
+    if not line:
+      break
+    try:
+      decoded = line.decode("utf-8", errors="ignore")
+    except Exception:
+      decoded = str(line)
+    if decoded.startswith("event:") and "|" in decoded:
+      saw_subgraph_event = True
+      break
+
+  assert saw_subgraph_event, "Expected at least one subgraph-suffixed SSE event"
 
   # 3) 拉取 history，并校验结构
   history = _request_json(

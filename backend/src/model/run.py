@@ -43,6 +43,7 @@ class RunStreamRequest(BaseModel):
     assistant_id: str
     input: Optional[dict] = None
     stream_mode: list[str] = Field(default_factory=lambda: ["updates"])
+    stream_subgraphs: bool = False
     config: Optional[dict] = None
     metadata: Optional[dict] = None
     interrupt_before: Optional[list[str]] = None
