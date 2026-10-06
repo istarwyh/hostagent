@@ -2,10 +2,9 @@ from typing import Annotated, Any, Callable, NotRequired, Optional, Union
 
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import LanguageModelLike
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool, InjectedToolCallId, tool
-from langgraph.config import get_config
 from langgraph.prebuilt import InjectedState, create_react_agent
 from langgraph.types import Command
 from typing_extensions import TypedDict
@@ -108,8 +107,8 @@ def _create_task_tool(
         if subagent_type not in agents:
             return f"Error: invoked agent of type {subagent_type}, the only allowed types are {[f'`{k}`' for k in agents]}"
         sub_agent = agents[subagent_type]
-        state["messages"] = [BaseMessage(content=description, role="user")]
-        result = sub_agent.invoke(state)
+        state["messages"] = [HumanMessage(content=description)]
+        result = await sub_agent.ainvoke(state)
         return Command(
             update={
                 "files": result.get("files", {}),

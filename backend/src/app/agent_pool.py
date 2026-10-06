@@ -57,10 +57,7 @@ class AgentPool:
 
         if config.scope == "singleton":
             if agent_id not in self._singletons:
-                logger.warning(
-                    f"Singleton agent {agent_id} not preloaded. "
-                    "This should have been created at startup."
-                )
+                logger.info(f"Creating singleton agent on first use: {agent_id}")
                 self._singletons[agent_id] = self._create_agent(config)
             return self._singletons[agent_id]
         else:

@@ -3,8 +3,6 @@ from dotenv import load_dotenv
 from src.app.agent_config import AgentConfig
 from src.app.agent_pool import AgentPool
 from src.app.agent_registry import AgentRegistry
-from src.deepagents.graph import create_deep_agent
-from src.repository.checkpointer import checkpointer
 from src.service.research_agent.research_agent_prompt import (
     critique_sub_agent,
     research_instructions,
@@ -27,16 +25,6 @@ research_sub_agent = {
     "prompt": sub_research_prompt,
     "tools": ["internet_search"],
 }
-
-# Create the agent instance (module-level singleton)
-logger.info(f"Creating {AGENT_NAME}...")
-agent = create_deep_agent(
-    tools=[internet_search],
-    instructions=research_instructions,
-    subagents=[critique_sub_agent, research_sub_agent],
-    checkpointer=checkpointer,
-).with_config({"recursion_limit": 1000})
-logger.info(f"{AGENT_NAME} created successfully")
 
 
 def register_to_agent_pool(registry: AgentRegistry, pool: AgentPool) -> None:
@@ -62,6 +50,4 @@ def register_to_agent_pool(registry: AgentRegistry, pool: AgentPool) -> None:
     )
     registry.register(config)
 
-    # Register the pre-created agent instance
-    pool.register_instance(AGENT_ID, agent)
-    logger.info(f"{AGENT_NAME} registered to agent pool")
+    logger.info(f"{AGENT_NAME} configuration registered")

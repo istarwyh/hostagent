@@ -187,6 +187,7 @@ class SimpleAuditToolNode(ToolNode):
         # 记录开始时间
         start_time = time.time()
         error_msg = None
+        output_content = None
         try:
             # 调用父类的invoke方法执行实际的工具
             result = super().invoke(input, config, **kwargs)

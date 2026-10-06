@@ -7,6 +7,7 @@ Provides endpoints for stateless run execution compatible with LangGraph SDK.
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
+from src.facade.langgraph_api.run_dependencies import prepare_run_agent
 from src.model.run import RunStreamRequest
 from src.service.langgraph_api.run_service import execute_stream_run
 from src.util.logger import setup_logger
@@ -24,6 +25,7 @@ async def stream_run(request: RunStreamRequest):
     """
     from uuid import uuid4
 
+    agent, run_config = await prepare_run_agent(request.assistant_id, request.config)
     thread_id = str(uuid4())
     logger.info(f"Starting stateless stream run with temp thread: {thread_id}")
 
@@ -34,7 +36,8 @@ async def stream_run(request: RunStreamRequest):
             input_data=request.input,
             stream_mode=request.stream_mode,
             stream_subgraphs=request.stream_subgraphs,
-            config=request.config,
+            config=run_config,
+            agent=agent,
         ):
             yield event
 

@@ -6,56 +6,21 @@ Dynamically discovers system agents from agent_registry and manages user-created
 """
 
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
-from src.app.agent_initializer import registry
-from src.model.assistant import Assistant, AssistantMetadata, AssistantSearchRequest
+from src.model.assistant import (
+    Assistant,
+    AssistantCreateRequest,
+    AssistantMetadata,
+    AssistantSearchRequest,
+    AssistantUpdateRequest,
+)
+from src.service.langgraph_api.assistant_service import get_all_assistants, user_assistants
 from src.util.logger import setup_logger
 
 logger = setup_logger(__name__)
 router = APIRouter(prefix="/assistants", tags=["assistants"])
-
-# User-created assistants (not from agent_registry)
-_user_assistants: dict[str, Assistant] = {}
-
-
-def _build_assistant_from_agent_config(agent_id: str) -> Assistant:
-    """
-    Convert AgentConfig from registry to Assistant model.
-
-    System agents are automatically discovered from agent_registry,
-    eliminating the need to manually maintain assistant configurations.
-    """
-    config = registry.get_config(agent_id)
-    return Assistant(
-        assistant_id=config.agent_id,
-        graph_id=config.agent_id,
-        name=config.name,
-        config={"scope": config.scope, "recursion_limit": config.recursion_limit},
-        metadata=AssistantMetadata(created_by="system"),
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        version=1,
-    )
-
-
-def _get_all_assistants() -> dict[str, Assistant]:
-    """
-    Get all assistants (system agents + user-created assistants).
-
-    System agents are dynamically loaded from agent_registry,
-    ensuring consistency with available agent implementations.
-    """
-    # System agents from registry
-    system_assistants = {
-        agent_id: _build_assistant_from_agent_config(agent_id)
-        for agent_id in registry.get_agent_ids()
-    }
-
-    # Merge with user-created assistants
-    return {**system_assistants, **_user_assistants}
 
 
 @router.post("/search")
@@ -69,7 +34,7 @@ async def search_assistants(request: AssistantSearchRequest = None):
     """
     logger.info("Searching assistants")
 
-    assistants = list(_get_all_assistants().values())
+    assistants = list(get_all_assistants().values())
 
     if request and request.graph_id:
         assistants = [a for a in assistants if a.graph_id == request.graph_id]
@@ -93,7 +58,7 @@ async def get_assistant(assistant_id: str):
     """
     logger.info(f"Getting assistant: {assistant_id}")
 
-    assistants = _get_all_assistants()
+    assistants = get_all_assistants()
     if assistant_id not in assistants:
         raise HTTPException(status_code=404, detail="Assistant not found")
 
@@ -101,12 +66,7 @@ async def get_assistant(assistant_id: str):
 
 
 @router.post("")
-async def create_assistant(
-    graph_id: str = "agent",
-    name: Optional[str] = None,
-    config: Optional[dict] = None,
-    metadata: Optional[dict] = None,
-):
+async def create_assistant(request: AssistantCreateRequest):
     """
     Create a new user-defined assistant.
 
@@ -118,33 +78,28 @@ async def create_assistant(
     assistant_id = str(uuid4())
     assistant = Assistant(
         assistant_id=assistant_id,
-        graph_id=graph_id,
-        name=name or f"Assistant-{assistant_id[:8]}",
-        config=config or {},
-        metadata=AssistantMetadata(**(metadata or {})),
+        graph_id=request.graph_id,
+        name=request.name or f"Assistant-{assistant_id[:8]}",
+        config=request.config,
+        metadata=AssistantMetadata(**{"created_by": "user", **request.metadata}),
     )
 
-    _user_assistants[assistant_id] = assistant
+    user_assistants[assistant_id] = assistant
     logger.info(f"Created user assistant: {assistant_id}")
 
     return assistant.model_dump()
 
 
 @router.patch("/{assistant_id}")
-async def update_assistant(
-    assistant_id: str,
-    name: Optional[str] = None,
-    config: Optional[dict] = None,
-    metadata: Optional[dict] = None,
-):
+async def update_assistant(assistant_id: str, request: AssistantUpdateRequest):
     """
     Update an existing user-created assistant.
 
     System agents from agent_registry are read-only and cannot be modified via API.
     """
     # Only allow updating user-created assistants
-    if assistant_id not in _user_assistants:
-        assistants = _get_all_assistants()
+    if assistant_id not in user_assistants:
+        assistants = get_all_assistants()
         if assistant_id in assistants:
             raise HTTPException(
                 status_code=403,
@@ -152,14 +107,14 @@ async def update_assistant(
             )
         raise HTTPException(status_code=404, detail="Assistant not found")
 
-    assistant = _user_assistants[assistant_id]
+    assistant = user_assistants[assistant_id]
 
-    if name:
-        assistant.name = name
-    if config:
-        assistant.config.update(config)
-    if metadata:
-        for key, value in metadata.items():
+    if request.name is not None:
+        assistant.name = request.name
+    if request.config is not None:
+        assistant.config.update(request.config)
+    if request.metadata is not None:
+        for key, value in request.metadata.items():
             setattr(assistant.metadata, key, value)
 
     assistant.updated_at = datetime.utcnow()
@@ -176,8 +131,8 @@ async def delete_assistant(assistant_id: str):
     System agents from agent_registry cannot be deleted via API.
     """
     # Only allow deleting user-created assistants
-    if assistant_id not in _user_assistants:
-        assistants = _get_all_assistants()
+    if assistant_id not in user_assistants:
+        assistants = get_all_assistants()
         if assistant_id in assistants:
             raise HTTPException(
                 status_code=403,
@@ -185,7 +140,7 @@ async def delete_assistant(assistant_id: str):
             )
         raise HTTPException(status_code=404, detail="Assistant not found")
 
-    del _user_assistants[assistant_id]
+    del user_assistants[assistant_id]
     logger.info(f"Deleted user assistant: {assistant_id}")
 
     return {"status": "deleted", "assistant_id": assistant_id}

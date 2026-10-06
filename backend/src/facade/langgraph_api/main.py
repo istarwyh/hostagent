@@ -4,19 +4,47 @@ LangGraph API Compatible Server
 Self-hosted LangGraph API that provides endpoints compatible with @langchain/langgraph-sdk.
 """
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from src.app.agent_initializer import initialize_agents
+from src.app.errors import AgentUnavailableError
 from src.facade.langgraph_api.routers import assistants, runs, threads
 from src.util.logger import setup_logger
 
 logger = setup_logger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Register agents when the server starts, without making provider calls."""
+    initialize_agents()
+    yield
+
+
 app = FastAPI(
     title="LangGraph API",
     description="Self-hosted LangGraph API compatible with @langchain/langgraph-sdk",
     version="1.0.0",
+    lifespan=lifespan,
 )
+
+
+@app.exception_handler(AgentUnavailableError)
+async def agent_unavailable(request: Request, error: AgentUnavailableError):
+    """Return an actionable configuration error before streaming starts."""
+    return JSONResponse(status_code=503, content={"detail": str(error)})
+
+
+@app.exception_handler(Exception)
+async def unexpected_error(request: Request, error: Exception):
+    """Keep internal exception details out of HTTP responses."""
+    logger.error("Unhandled API error at %s", request.url.path, exc_info=error)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
 
 # CORS middleware for frontend access
 app.add_middleware(

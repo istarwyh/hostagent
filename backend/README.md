@@ -68,6 +68,20 @@ OPENAI_API_KEY=your_openai_key_here
 TAVILY_API_KEY=your_tavily_key_here  # For research agent
 ```
 
+The API starts and exposes liveness, assistant discovery, and thread management
+without provider keys. Agent instances are created on first use. A run without
+the selected model provider's key returns HTTP 503 before SSE starts; unknown
+assistants return 404 and invalid stream modes return 422. Web search requires
+`TAVILY_API_KEY`, uses a 15-second timeout, and reports provider failures as tool
+errors. Execution failures after streaming starts produce an `error` SSE event
+with a run ID; internal exception details remain in server logs.
+
+Run the local API regression suite without credentials or external services:
+
+```bash
+pytest src/test/test_api_errors.py
+```
+
 ## Development
 
 ### Running Tests

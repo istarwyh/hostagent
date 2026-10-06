@@ -5,6 +5,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+from src.model.config import GraphConfig
+
 
 class StreamMode(str, Enum):
     """Stream mode options matching SDK StreamMode type."""
@@ -40,11 +42,11 @@ class EventType(str, Enum):
 class RunStreamRequest(BaseModel):
     """Request model for streaming runs."""
 
-    assistant_id: str
+    assistant_id: str = Field(min_length=1)
     input: Optional[dict] = None
-    stream_mode: list[str] = Field(default_factory=lambda: ["updates"])
+    stream_mode: list[StreamMode] = Field(default_factory=lambda: [StreamMode.UPDATES])
     stream_subgraphs: bool = False
-    config: Optional[dict] = None
+    config: Optional[GraphConfig] = None
     metadata: Optional[dict] = None
     interrupt_before: Optional[list[str]] = None
     interrupt_after: Optional[list[str]] = None

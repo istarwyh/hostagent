@@ -15,8 +15,11 @@ Supports all SDK StreamMode types:
 """
 
 import json
+from enum import Enum
 from typing import Any, AsyncIterator, Optional
 from uuid import uuid4
+
+from langgraph.graph.state import CompiledStateGraph
 
 from src.app.agent_initializer import agent_pool
 from src.repository.checkpointer import checkpointer
@@ -31,7 +34,7 @@ STREAM_MODE_MAPPING = {
     "messages-tuple": "messages",
     "updates": "updates",
     "debug": "debug",
-    "events": "events",
+    "events": "updates",  # Derive on_chain_stream events from node updates.
     "tasks": "updates",  # tasks 需要从 updates 中构建
     "checkpoints": "values",  # checkpoints 需要从 state 中构建
     "custom": "custom",
@@ -234,6 +237,7 @@ async def execute_stream_run(
     stream_mode: Optional[list[str]] = None,
     stream_subgraphs: bool = False,
     config: Optional[dict] = None,
+    agent: Optional[CompiledStateGraph] = None,
 ) -> AsyncIterator[str]:
     """
     Execute a streaming run and yield SSE events.
@@ -265,18 +269,19 @@ async def execute_stream_run(
     yield format_sse_event("metadata", {"run_id": run_id, "thread_id": thread_id})
 
     try:
-        agent = agent_pool.get_agent(assistant_id)
+        if agent is None:
+            agent = agent_pool.get_agent(assistant_id)
 
-        run_config = {
-            "configurable": {
-                "thread_id": thread_id,
-            }
+        run_config = dict(config or {})
+        run_config["configurable"] = {
+            **run_config.get("configurable", {}),
+            "thread_id": thread_id,
         }
-        if config:
-            run_config.update(config)
 
         # Normalize requested SDK stream modes
-        requested_modes = stream_mode or ["updates"]
+        requested_modes = [
+            mode.value if isinstance(mode, Enum) else mode for mode in (stream_mode or ["updates"])
+        ]
 
         # Map SDK stream modes to LangGraph agent stream modes.
         # 一个 SDK 模式可能复用同一个 agent 模式（如 tasks→updates, checkpoints→values）。
@@ -352,7 +357,9 @@ async def execute_stream_run(
     except Exception as e:
         logger.error(f"Stream run failed: {run_id}", exc_info=True)
         # ErrorStreamEvent: { error: string, message: string }
-        yield format_sse_event("error", {"error": type(e).__name__, "message": str(e)})
+        yield format_sse_event(
+            "error", {"error": "RunError", "message": "Agent execution failed", "run_id": run_id}
+        )
 
 
 def _serialize_chunk_for_mode(
@@ -377,6 +384,9 @@ def _serialize_chunk_for_mode(
         run_id: Run ID for context
         step: Current step number
     """
+    if STREAM_MODE_MAPPING.get(sdk_mode) != agent_mode:
+        return None
+
     # messages / messages-tuple: [Message, MessageTupleMetadata]
     if sdk_mode in ("messages", "messages-tuple"):
         # Only emit if agent is in messages mode

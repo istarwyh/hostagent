@@ -11,6 +11,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from src.facade.langgraph_api.run_dependencies import prepare_run_agent
 from src.model.run import RunStreamRequest
 from src.model.thread import (
     Thread,
@@ -295,7 +296,7 @@ async def get_thread_state(thread_id: str, checkpoint_id: Optional[str] = None):
         ).model_dump()
     except Exception as e:
         logger.error(f"Failed to get thread state: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to read thread state") from e
 
 
 @router.post("/{thread_id}/state")
@@ -303,13 +304,7 @@ async def update_thread_state(thread_id: str, request: ThreadStateUpdateRequest)
     """Update thread state."""
     logger.info(f"Updating state for thread: {thread_id}")
 
-    # For now, just return success - actual state update would require
-    # more complex checkpoint manipulation
-    return {
-        "checkpoint_id": str(uuid4()),
-        "thread_id": thread_id,
-        "status": "updated",
-    }
+    raise HTTPException(status_code=501, detail="Thread state updates are not implemented")
 
 
 @router.api_route("/{thread_id}/history", methods=["GET", "POST"])
@@ -413,7 +408,7 @@ async def get_thread_history(
         return history[:limit]
     except Exception as e:
         logger.error(f"Failed to get thread history: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to read thread history") from e
 
 
 @router.post("/{thread_id}/runs/stream")
@@ -425,6 +420,7 @@ async def stream_run(thread_id: str, request: RunStreamRequest):
     """
     logger.info(f"Starting stream run for thread: {thread_id}")
 
+    agent, run_config = await prepare_run_agent(request.assistant_id, request.config)
     # Ensure thread exists
     if thread_id not in _threads:
         _threads[thread_id] = Thread(
@@ -441,7 +437,8 @@ async def stream_run(thread_id: str, request: RunStreamRequest):
             input_data=request.input,
             stream_mode=request.stream_mode,
             stream_subgraphs=request.stream_subgraphs,
-            config=request.config,
+            config=run_config,
+            agent=agent,
         ):
             yield event
 

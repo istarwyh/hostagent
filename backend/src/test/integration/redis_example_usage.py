@@ -6,12 +6,11 @@ import os
 
 from src.client import get_redis_client
 
-# Using the specific Redis URL you provided
-redis_url = "rediss://default:AUGJAAIncDI3YjVhYTZhNzRlNzI0YjEwYTY2ZGU2MTkwY2EzNzJlZHAyMTY3Nzc@unified-ape-16777.upstash.io:6379"
-
 
 def main():
-    # Create Redis client with your specific URL
+    redis_url = os.getenv("REDIS_URL")
+    if not redis_url:
+        raise ValueError("Set REDIS_URL before running this integration example")
     client = get_redis_client(redis_url)
 
     try:
