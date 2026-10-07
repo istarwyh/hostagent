@@ -215,7 +215,8 @@ __marimo__/
 
 # LangGraph
 .langgraph_api
-/src/test/test_env_connectivity.py
+# Machine-local test settings only; shared tests stay tracked.
+*.local.py
 
 #IDE
 .idea

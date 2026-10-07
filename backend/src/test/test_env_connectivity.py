@@ -1,16 +1,25 @@
+"""Optional live model smoke test; never runs during ordinary offline validation."""
+
+import os
 import sys
 
+import pytest
 from openai import OpenAI
 from openai.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam
 
 
-def test_chat() -> None:
-    model = "kimi-k2-turbo-preview"
-    api_key = "sk-GPjbDWRs9RUyIsuvQLoA3HEdsVgayokEPkbUJq5HAKl1RdNb"
-    base_url = "https://api.moonshot.cn/v1"
+def _live_test_enabled() -> bool:
+    return os.getenv("HOSTAGENT_RUN_LIVE_TESTS") == "1" and bool(os.getenv("OPENAI_API_KEY"))
 
-    client = OpenAI(api_key=api_key, base_url=base_url.rstrip("/"))
-    resp = client.chat.completions.create(
+
+@pytest.mark.integration
+def test_chat() -> None:
+    if not _live_test_enabled():
+        pytest.skip("Set HOSTAGENT_RUN_LIVE_TESTS=1 and OPENAI_API_KEY to opt into a live call")
+    model = os.getenv("OPENAI_MODEL_NAME", "kimi-k2-turbo-preview")
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.moonshot.cn/v1")
+    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"], base_url=base_url.rstrip("/"))
+    response = client.chat.completions.create(
         model=model,
         messages=[
             ChatCompletionSystemMessageParam(role="system", content="You are a concise assistant."),
@@ -19,17 +28,23 @@ def test_chat() -> None:
         max_tokens=5,
         temperature=0,
     )
-
-    content = resp.choices[0].message.content if resp.choices else None
+    content = response.choices[0].message.content if response.choices else None
+    assert content and content.strip().lower() == "pong"
     print("Connectivity OK")
-    print(f"model={model}")
-    print(f"base_url={base_url}")
-    print(f"sample_reply={content!r}")
 
 
 if __name__ == "__main__":
+    if not _live_test_enabled():
+        print(
+            "Live test disabled: configure OPENAI_API_KEY and explicitly set HOSTAGENT_RUN_LIVE_TESTS=1",
+            file=sys.stderr,
+        )
+        sys.exit(2)
     try:
         test_chat()
-    except Exception as e:
-        print(f"[FAIL] {type(e).__name__}: {e}", file=sys.stderr)
+    except Exception as error:
+        print(
+            f"Connectivity failed ({type(error).__name__}); provider details omitted",
+            file=sys.stderr,
+        )
         sys.exit(1)

@@ -82,6 +82,10 @@ Run the local API regression suite without credentials or external services:
 pytest src/test/test_api_errors.py
 ```
 
+The optional `src/test/test_env_connectivity.py` reads provider configuration only
+from environment variables. It skips unless `HOSTAGENT_RUN_LIVE_TESTS=1` and
+`OPENAI_API_KEY` are explicitly configured; offline validation never needs them.
+
 ## Development
 
 ### Running Tests
