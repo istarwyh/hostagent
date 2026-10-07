@@ -46,12 +46,34 @@ export interface ActionRequest {
   description?: string;
 }
 
+export type ToolApprovalDecision =
+  | { type: "approve" }
+  | { type: "reject"; message: string }
+  | { type: "edit"; edited_action: ActionRequest };
+
+export interface ToolApprovalResume {
+  decisions: ToolApprovalDecision[];
+}
+
+export type ToolApprovalCommandResume =
+  | ToolApprovalResume
+  | Record<string, ToolApprovalResume>;
+
 export interface ReviewConfig {
-  actionName: string;
-  allowedDecisions?: string[];
+  action_name?: string;
+  allowed_decisions?: ToolApprovalDecision["type"][];
+  // Older deployments used camelCase for these fields.
+  actionName?: string;
+  allowedDecisions?: ToolApprovalDecision["type"][];
 }
 
 export interface ToolApprovalInterruptData {
   action_requests: ActionRequest[];
   review_configs?: ReviewConfig[];
+}
+
+export interface ApprovalInterrupt {
+  id?: string;
+  value: ToolApprovalInterruptData;
+  ns?: string[];
 }

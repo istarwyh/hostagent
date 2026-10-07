@@ -7,15 +7,16 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from langchain.tools import ToolRuntime
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 
 from deepagents.audit_tool_node import SimpleAuditToolNode
+from deepagents.middleware.subagents import _create_task_tool
 from deepagents.model import get_default_model
 from deepagents.state import DeepAgentState
-from deepagents.sub_agent import _create_task_tool
 from src.app.agent_config import AgentConfig
 from src.app.agent_initializer import agent_pool, registry
 from src.facade.langgraph_api.main import app
@@ -292,29 +293,26 @@ def test_async_subagent_runs_an_async_only_graph(monkeypatch):
     graph.add_edge(START, "respond")
     graph.add_edge("respond", END)
     task = _create_task_tool(
-        [],
-        "",
-        [
-            {
-                "name": "local",
-                "description": "local graph",
-                "graph": graph.compile(),
-            }
-        ],
-        get_default_model(),
-        DeepAgentState,
+        default_tools=[],
+        subagents=[{"name": "local", "description": "local graph", "runnable": graph.compile()}],
+        default_model=get_default_model(),
+        default_middleware=[],
+        default_interrupt_on=None,
+        general_purpose_agent=False,
     )
     result = asyncio.run(
         task.ainvoke(
             {
-                "name": "task",
-                "type": "tool_call",
-                "id": "verify",
-                "args": {
-                    "description": "verification",
-                    "subagent_type": "local",
-                    "state": {"messages": []},
-                },
+                "description": "verification",
+                "subagent_type": "local",
+                "runtime": ToolRuntime(
+                    state={"messages": []},
+                    context=None,
+                    config={},
+                    tool_call_id="verify",
+                    store=None,
+                    stream_writer=lambda _: None,
+                ),
             }
         )
     )

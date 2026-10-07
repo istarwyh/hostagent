@@ -107,31 +107,59 @@ pytest src/test/unit/
 - **Facade Layer** (`src/facade/`): FastAPI REST API endpoints
 - **Client Layer** (`src/client/`): External service clients (Redis, etc.)
 
-### API Services
+### Start the API
 
-#### Starting the Research Agent API
+From `backend/`, run `.venv/bin/python -m uvicorn src.facade.langgraph_api.main:app --port 2024`.
+The health endpoint is `GET /ok`; assistant discovery is `POST /assistants/search`.
+Start the frontend separately with `cd frontend && yarn dev` from the repository root.
+
+## LangChain v1 migration
+
+The core follows upstream master 8907f04: `create_agent` plus todo, filesystem,
+subagent, summarization, prompt caching, patch-tool-call and human-review middleware.
+Both `invoke` and `ainvoke` use the same compiled graph. Domain agents register
+configuration at startup and construct provider clients only on the first run.
+Registry subagents use `system_prompt`, actual tool objects, and `runnable` for a
+precompiled subagent; `instructions` remains the application AgentConfig field.
+
+Internally files retain upstream FileData metadata and reducers. The API converts
+contents to the frontend's text-file contract in streams, thread state and history.
+Human-review decisions travel through `command.resume`; complete decision batches
+keep action order, including repeated calls to the same tool. State/history include
+real pending tasks so interrupted threads can reconnect. Thread state updates are
+still explicitly unsupported (HTTP 501), rather than pretending to save edits.
+
+Set `HOSTAGENT_AUDIT_DIR` (or AgentConfig.extra_config.audit_dir) to opt into v1
+per-tool auditing for the main agent and its subagents. Logs contain tool inputs and
+outputs: choose local access/retention accordingly. Auditing preserves tool results
+and exceptions, uses unique filenames and serialized summary writes, and is off
+when no directory is configured. The old SimpleAuditToolNode remains for the
+existing learning/integration examples; production uses middleware.
+
+Run offline regression checks without provider credentials:
 
 ```bash
-# From the project root
-../conf/start_research_agent_api.sh
-
-# Or manually from backend directory
-source .venv/bin/activate
-export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
-python -m uvicorn src.facade.research_agent_api:app --reload
+.venv/bin/python -m pytest src/test/test_api_errors.py src/test/test_logging_system.py src/test/test_v1_migration.py src/test/test_audit_middleware.py
+# Upstream local middleware tests only instantiate an Anthropic client; no API call:
+ANTHROPIC_API_KEY=local-construction-placeholder OPENAI_API_KEY=local-construction-placeholder .venv/bin/python -m pytest tests/test_middleware.py
 ```
 
-The API will be available at `http://localhost:8000` with endpoints:
-- `GET /health` - Health check
-- `POST /research/invoke` - Synchronous research invocation
-- `POST /research/stream` - SSE streaming research endpoint
+`tests/integration_tests/` retains upstream live-model tests, which require actual
+provider access and are not part of the offline suite. The local migration suite
+uses deterministic chat models with real create_agent graphs, HTTP routes, tools,
+checkpoints, and interrupts. It does not verify external LLM, Tavily or Redis service
+availability. This experiment is run from its complete checkout; standalone wheel
+or repository-external import validation is outside its scope.
+
+The monorepo uses `backend/pyproject.toml` for setup; the upstream root-only uv.lock
+was not carried over because it does not describe these API/development dependencies.
 
 ## Architecture
 
 ### Deep Agent Components
 
 1. **Planning Tool** (`write_todos`): Task list management for complex workflows
-2. **Sub-agents**: Spawn specialized agents for subtasks or context isolation
+2. **Sub-agents**: Spawn specialized agents through SubAgentMiddleware
 3. **Virtual File System**: Mock filesystem using LangGraph state (no disk I/O)
 4. **System Prompt**: Detailed instructions in `src/deepagents/prompts.py`
 
@@ -155,7 +183,7 @@ from deepagents import create_deep_agent
 
 agent = create_deep_agent(
     tools=[your_tools],
-    instructions="Your custom instructions...",
+    system_prompt="Your custom instructions...",
     model="claude-sonnet-4-20250514",  # optional
     subagents=[...],  # optional
 )

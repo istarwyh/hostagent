@@ -9,6 +9,7 @@ import {
 } from "@langchain/langgraph-sdk";
 import { v4 as uuidv4 } from "uuid";
 import type { UseStreamThread } from "@langchain/langgraph-sdk/react";
+import { collectApprovalInterrupts } from "@/app/utils/toolApproval";
 import type { TodoItem } from "@/app/types/types";
 import { useClient } from "@/providers/ClientProvider";
 import { useQueryState } from "nuqs";
@@ -23,6 +24,7 @@ export type StateType = {
     page_content?: string;
   };
   ui?: any;
+  __interrupt__?: unknown[];
 };
 
 export function useChat({
@@ -153,6 +155,7 @@ export function useChat({
 
   return {
     stream,
+    threadId,
     todos: stream.values.todos ?? [],
     files: stream.values.files ?? {},
     email: stream.values.email,
@@ -162,6 +165,10 @@ export function useChat({
     isLoading: stream.isLoading,
     isThreadLoading: stream.isThreadLoading,
     interrupt: stream.interrupt,
+    approvalInterrupts: collectApprovalInterrupts(
+      stream.values.__interrupt__,
+      stream.history.at(-1)
+    ),
     getMessagesMetadata: stream.getMessagesMetadata,
     sendMessage,
     runSingleStep,

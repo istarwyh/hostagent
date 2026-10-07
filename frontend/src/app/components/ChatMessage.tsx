@@ -4,12 +4,7 @@ import React, { useMemo, useState, useCallback } from "react";
 import { SubAgentIndicator } from "@/app/components/SubAgentIndicator";
 import { ToolCallBox } from "@/app/components/ToolCallBox";
 import { MarkdownContent } from "@/app/components/MarkdownContent";
-import type {
-  SubAgent,
-  ToolCall,
-  ActionRequest,
-  ReviewConfig,
-} from "@/app/types/types";
+import type { SubAgent, ToolCall } from "@/app/types/types";
 import { Message } from "@langchain/langgraph-sdk";
 import {
   extractSubAgentContent,
@@ -20,27 +15,13 @@ import { cn } from "@/lib/utils";
 interface ChatMessageProps {
   message: Message;
   toolCalls: ToolCall[];
-  isLoading?: boolean;
-  actionRequestsMap?: Map<string, ActionRequest>;
-  reviewConfigsMap?: Map<string, ReviewConfig>;
   ui?: any[];
   stream?: any;
-  onResumeInterrupt?: (value: any) => void;
   graphId?: string;
 }
 
 export const ChatMessage = React.memo<ChatMessageProps>(
-  ({
-    message,
-    toolCalls,
-    isLoading,
-    actionRequestsMap,
-    reviewConfigsMap,
-    ui,
-    stream,
-    onResumeInterrupt,
-    graphId,
-  }) => {
+  ({ message, toolCalls, ui, stream, graphId }) => {
     const isUser = message.type === "human";
     const messageContent = extractStringFromMessageContent(message);
     const hasContent = messageContent && messageContent.trim() !== "";
@@ -129,8 +110,6 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                 const toolCallGenUiComponent = ui?.find(
                   (u) => u.metadata?.tool_call_id === toolCall.id
                 );
-                const actionRequest = actionRequestsMap?.get(toolCall.name);
-                const reviewConfig = reviewConfigsMap?.get(toolCall.name);
                 return (
                   <ToolCallBox
                     key={toolCall.id}
@@ -138,10 +117,6 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                     uiComponent={toolCallGenUiComponent}
                     stream={stream}
                     graphId={graphId}
-                    actionRequest={actionRequest}
-                    reviewConfig={reviewConfig}
-                    onResume={onResumeInterrupt}
-                    isLoading={isLoading}
                   />
                 );
               })}

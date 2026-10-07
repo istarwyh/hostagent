@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Application source helpers must not inherit the root Python lib/ ignore.
+!src/lib/
+!src/lib/**

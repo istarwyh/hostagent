@@ -18,11 +18,10 @@ import {
   FileIcon,
 } from "lucide-react";
 import { ChatMessage } from "@/app/components/ChatMessage";
+import { ToolApprovalBatch } from "@/app/components/ToolApprovalBatch";
 import type {
   TodoItem,
   ToolCall,
-  ActionRequest,
-  ReviewConfig,
 } from "@/app/types/types";
 import { Assistant, Message } from "@langchain/langgraph-sdk";
 import { extractStringFromMessageContent } from "@/app/utils/utils";
@@ -71,6 +70,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
 
   const {
     stream,
+    threadId,
     messages,
     todos,
     files,
@@ -79,12 +79,13 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
     isLoading,
     isThreadLoading,
     interrupt,
+    approvalInterrupts,
     sendMessage,
     stopStream,
     resumeInterrupt,
   } = useChatContext();
 
-  const submitDisabled = isLoading || !assistant;
+  const submitDisabled = isLoading || !assistant || approvalInterrupts.length > 0;
 
   const handleSubmit = useCallback(
     (e?: FormEvent) => {
@@ -224,23 +225,6 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
   const hasTasks = todos.length > 0;
   const hasFiles = Object.keys(files).length > 0;
 
-  // Parse out any action requests or review configs from the interrupt
-  const actionRequestsMap: Map<string, ActionRequest> | null = useMemo(() => {
-    const actionRequests =
-      interrupt?.value && (interrupt.value as any)["action_requests"];
-    if (!actionRequests) return new Map<string, ActionRequest>();
-    return new Map(actionRequests.map((ar: ActionRequest) => [ar.name, ar]));
-  }, [interrupt]);
-
-  const reviewConfigsMap: Map<string, ReviewConfig> | null = useMemo(() => {
-    const reviewConfigs =
-      interrupt?.value && (interrupt.value as any)["review_configs"];
-    if (!reviewConfigs) return new Map<string, ReviewConfig>();
-    return new Map(
-      reviewConfigs.map((rc: ReviewConfig) => [rc.actionName, rc])
-    );
-  }, [interrupt]);
-
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div
@@ -257,30 +241,34 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
             </div>
           ) : (
             <>
-              {processedMessages.map((data, index) => {
+              {processedMessages.map((data) => {
                 const messageUi = ui?.filter(
                   (u: any) => u.metadata?.message_id === data.message.id
                 );
-                const isLastMessage = index === processedMessages.length - 1;
                 return (
                   <ChatMessage
                     key={data.message.id}
                     message={data.message}
                     toolCalls={data.toolCalls}
-                    isLoading={isLoading}
-                    actionRequestsMap={
-                      isLastMessage ? actionRequestsMap : undefined
-                    }
-                    reviewConfigsMap={
-                      isLastMessage ? reviewConfigsMap : undefined
-                    }
                     ui={messageUi}
                     stream={stream}
-                    onResumeInterrupt={resumeInterrupt}
                     graphId={assistant?.graph_id}
                   />
                 );
               })}
+              {approvalInterrupts.length > 0 && (
+                <ToolApprovalBatch
+                  key={JSON.stringify([
+                    threadId,
+                    assistant?.assistant_id,
+                    approvalInterrupts,
+                  ])}
+                  interrupts={approvalInterrupts}
+                  error={stream.error}
+                  onResume={resumeInterrupt}
+                  isLoading={isLoading}
+                />
+              )}
             </>
           )}
         </div>

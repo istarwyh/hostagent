@@ -4,6 +4,7 @@ Agent Pool
 Manages agent instances lifecycle. Similar to Spring's ApplicationContext.
 """
 
+import os
 from typing import Any
 
 from langgraph.graph.state import CompiledStateGraph
@@ -135,16 +136,17 @@ class AgentPool:
         Returns:
             Compiled agent graph
         """
-        from src.deepagents.graph import create_deep_agent
+        from deepagents.graph import create_deep_agent
 
         logger.debug(f"Building agent: {config.agent_id}")
 
         agent = create_deep_agent(
             tools=config.tools,
-            instructions=config.instructions,
+            system_prompt=config.instructions,
             subagents=config.subagents,
             model=config.model,
             checkpointer=self._checkpointer,
+            audit_dir=config.extra_config.get("audit_dir") or os.getenv("HOSTAGENT_AUDIT_DIR"),
         ).with_config({"recursion_limit": config.recursion_limit})
 
         return agent

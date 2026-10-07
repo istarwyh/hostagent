@@ -11,36 +11,20 @@ import {
   StopCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ToolCall, ActionRequest, ReviewConfig } from "@/app/types/types";
+import { ToolCall } from "@/app/types/types";
 import { cn } from "@/lib/utils";
 import { LoadExternalComponent } from "@langchain/langgraph-sdk/react-ui";
-import { ToolApprovalInterrupt } from "@/app/components/ToolApprovalInterrupt";
 
 interface ToolCallBoxProps {
   toolCall: ToolCall;
   uiComponent?: any;
   stream?: any;
   graphId?: string;
-  actionRequest?: ActionRequest;
-  reviewConfig?: ReviewConfig;
-  onResume?: (value: any) => void;
-  isLoading?: boolean;
 }
 
 export const ToolCallBox = React.memo<ToolCallBoxProps>(
-  ({
-    toolCall,
-    uiComponent,
-    stream,
-    graphId,
-    actionRequest,
-    reviewConfig,
-    onResume,
-    isLoading,
-  }) => {
-    const [isExpanded, setIsExpanded] = useState(
-      () => !!uiComponent || !!actionRequest
-    );
+  ({ toolCall, uiComponent, stream, graphId }) => {
+    const [isExpanded, setIsExpanded] = useState(() => !!uiComponent);
     const [expandedArgs, setExpandedArgs] = useState<Record<string, boolean>>(
       {}
     );
@@ -150,16 +134,6 @@ export const ToolCallBox = React.memo<ToolCallBoxProps>(
                   message={uiComponent}
                   namespace={graphId}
                   meta={{ status, args, result: result ?? "No Result Yet" }}
-                />
-              </div>
-            ) : actionRequest && onResume ? (
-              // Show tool approval UI when there's an action request but no GenUI
-              <div className="mt-4">
-                <ToolApprovalInterrupt
-                  actionRequest={actionRequest}
-                  reviewConfig={reviewConfig}
-                  onResume={onResume}
-                  isLoading={isLoading}
                 />
               </div>
             ) : (

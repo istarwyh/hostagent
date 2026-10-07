@@ -6,11 +6,12 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11,<4.0"
 dependencies = [
-    "langgraph>=0.2.6",
-    "langchain-anthropic>=0.1.23",
-    "langchain>=0.2.14",
+    "langgraph>=1.0,<2",
+    "langchain-anthropic>=1.0,<2",
+    "langchain>=1.0,<2",
+    "langchain-core>=1.0,<2",
     "langchain-mcp-adapters>=0.1.9",
-    "langchain-openai>=0.1.0",
+    "langchain-openai>=1.0,<2",
     "openai>=1.0.3",
     "python-dotenv>=1,<2",
     "tavily-python>=0.7,<1",
@@ -57,10 +58,11 @@ dev = [
 requires = ["setuptools>=73.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["deepagents"]
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["deepagents*"]
 [tool.setuptools.package-dir]
-"deepagents" = "src/deepagents"
+"" = "src"
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
@@ -134,6 +136,7 @@ python_functions = ["test_*"]
 addopts = "-v --strict-markers"
 markers = [
     "unit: Unit tests",
+    "requires: Optional package requirement in upstream tests",
     "integration: Integration tests",
     "slow: Slow running tests",
 ]

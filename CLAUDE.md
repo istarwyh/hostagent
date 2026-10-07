@@ -19,12 +19,10 @@ backend/                          # Python 后端
 ├── src/
 │   ├── deepagents/              # 核心 Agent 框架
 │   │   ├── graph.py             # Agent 创建函数（create_deep_agent）
-│   │   ├── prompts.py           # 内置系统提示词
-│   │   ├── tools.py             # 内置工具（todos, 虚拟文件系统）
-│   │   ├── sub_agent.py         # 子 Agent 管理
-│   │   ├── state.py             # LangGraph 状态模式（DeepAgentState）
-│   │   ├── interrupt.py         # 人机交互中断处理
-│   │   └── audit_tool_node.py   # 工具执行审计
+│   │   ├── middleware/         # v1 todos/files/subagents/HITL/audit integration
+│   │   ├── model.py             # Provider selection and missing-key errors
+│   │   ├── state.py             # Upstream-compatible graph state
+│   │   └── audit_tool_node.py   # Legacy learning/example utility
 │   ├── app/                     # 应用层（Agent 注册和生命周期管理）
 │   │   ├── agent_registry.py   # Agent 配置注册表
 │   │   ├── agent_pool.py        # Agent 实例池
@@ -49,6 +47,9 @@ frontend/                         # Next.js 前端
 docs/                            # 文档
 └── tech/                        # 技术方案和架构决策
 ```
+
+本项目是完整仓库运行的试验项目，不要求独立发包或仓库外 import。
+核心以 LangChain v1 `create_agent` 与 middleware 为准；API 保持现有前端契约。
 
 ### 架构原则
 
@@ -87,7 +88,7 @@ uv pip install -e ".[dev]"       # 安装开发依赖
 uvicorn src.facade.langgraph_api.main:app --reload --port 2024
 
 # 运行测试
-pytest
+pytest src/test/test_api_errors.py src/test/test_logging_system.py src/test/test_v1_migration.py src/test/test_audit_middleware.py
 
 # 代码格式化和检查（pre-commit）
 pre-commit run --all-files

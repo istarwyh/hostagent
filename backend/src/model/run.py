@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from src.model.config import GraphConfig
 
@@ -39,11 +39,21 @@ class EventType(str, Enum):
     ERROR = "error"
 
 
+class RunCommand(BaseModel):
+    """SDK control command, including human approval decisions."""
+
+    resume: Any = None
+    update: Optional[dict] = None
+    goto: Optional[str | list[str]] = None
+
+
 class RunStreamRequest(BaseModel):
     """Request model for streaming runs."""
 
     assistant_id: str = Field(min_length=1)
     input: Optional[dict] = None
+    command: Optional[RunCommand] = None
+    checkpoint: Optional[dict] = None
     stream_mode: list[StreamMode] = Field(default_factory=lambda: [StreamMode.UPDATES])
     stream_subgraphs: bool = False
     config: Optional[GraphConfig] = None
@@ -51,6 +61,12 @@ class RunStreamRequest(BaseModel):
     interrupt_before: Optional[list[str]] = None
     interrupt_after: Optional[list[str]] = None
     multitask_strategy: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_input_or_command(self):
+        if self.input is not None and self.command is not None:
+            raise ValueError("Provide input or command, not both")
+        return self
 
 
 class StreamEvent(BaseModel):

@@ -4,20 +4,27 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertCircle, Check, X, Pencil } from "lucide-react";
-import type { ActionRequest, ReviewConfig } from "@/app/types/types";
+import type {
+  ActionRequest,
+  ReviewConfig,
+  ToolApprovalDecision,
+} from "@/app/types/types";
+import { getAllowedDecisions } from "@/app/utils/toolApproval";
 import { cn } from "@/lib/utils";
 
 interface ToolApprovalInterruptProps {
   actionRequest: ActionRequest;
   reviewConfig?: ReviewConfig;
-  onResume: (value: any) => void;
+  onDecision: (decision: ToolApprovalDecision) => void;
+  decision?: ToolApprovalDecision;
   isLoading?: boolean;
 }
 
 export function ToolApprovalInterrupt({
   actionRequest,
   reviewConfig,
-  onResume,
+  onDecision,
+  decision,
   isLoading,
 }: ToolApprovalInterruptProps) {
   const [rejectionMessage, setRejectionMessage] = useState("");
@@ -25,63 +32,36 @@ export function ToolApprovalInterrupt({
   const [editedArgs, setEditedArgs] = useState<Record<string, unknown>>({});
   const [showRejectionInput, setShowRejectionInput] = useState(false);
 
-  const allowedDecisions = reviewConfig?.allowedDecisions ?? [
-    "approve",
-    "reject",
-    "edit",
-  ];
+  const allowedDecisions = getAllowedDecisions(reviewConfig);
+  const disabled = isLoading || !!decision;
 
   const handleApprove = () => {
-    onResume({
-      decisions: [{ type: "approve" }],
-    });
+    if (!disabled) onDecision({ type: "approve" });
   };
 
   const handleReject = () => {
-    if (showRejectionInput) {
-      onResume({
-        decisions: [
-          {
-            type: "reject",
-            message: rejectionMessage.trim(),
-          },
-        ],
-      });
-    } else {
-      setShowRejectionInput(true);
-    }
+    if (!disabled) setShowRejectionInput(true);
   };
 
   const handleRejectConfirm = () => {
-    onResume({
-      decisions: [
-        {
-          type: "reject",
-          message: rejectionMessage.trim(),
-        },
-      ],
-    });
+    if (!disabled) {
+      onDecision({ type: "reject", message: rejectionMessage.trim() });
+      setShowRejectionInput(false);
+    }
   };
 
   const handleEdit = () => {
-    if (isEditing) {
-      onResume({
-        decisions: [
-          {
-            type: "edit",
-            edited_action: {
-              name: actionRequest.name,
-              args: editedArgs,
-            },
-          },
-        ],
+    if (isEditing && !disabled) {
+      onDecision({
+        type: "edit",
+        edited_action: { name: actionRequest.name, args: editedArgs },
       });
       setIsEditing(false);
-      setEditedArgs({});
     }
   };
 
   const startEditing = () => {
+    if (disabled) return;
     setIsEditing(true);
     setEditedArgs(JSON.parse(JSON.stringify(actionRequest.args)));
     setShowRejectionInput(false);
@@ -113,7 +93,7 @@ export function ToolApprovalInterrupt({
           className="text-yellow-600 dark:text-yellow-400"
         />
         <span className="text-xs font-semibold uppercase tracking-wider">
-          Approval Required
+          {decision ? `Decision saved: ${decision.type}` : "Approval Required"}
         </span>
       </div>
 
@@ -161,7 +141,7 @@ export function ToolApprovalInterrupt({
                     rows={
                       typeof value === "string" && value.length < 100 ? 2 : 4
                     }
-                    disabled={isLoading}
+                    disabled={disabled}
                   />
                 </div>
               ))}
@@ -173,7 +153,13 @@ export function ToolApprovalInterrupt({
               Arguments
             </span>
             <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded-sm border border-border bg-muted/40 p-2 font-mono text-xs text-foreground">
-              {JSON.stringify(actionRequest.args, null, 2)}
+              {JSON.stringify(
+                decision?.type === "edit"
+                  ? decision.edited_action.args
+                  : actionRequest.args,
+                null,
+                2
+              )}
             </pre>
           </div>
         )}
@@ -191,7 +177,7 @@ export function ToolApprovalInterrupt({
             placeholder="Explain why you're rejecting this action..."
             className="text-sm"
             rows={2}
-            disabled={isLoading}
+            disabled={disabled}
           />
         </div>
       )}
@@ -204,14 +190,14 @@ export function ToolApprovalInterrupt({
               variant="outline"
               size="sm"
               onClick={cancelEditing}
-              disabled={isLoading}
+              disabled={disabled}
             >
               Cancel
             </Button>
             <Button
               size="sm"
               onClick={handleEdit}
-              disabled={isLoading}
+              disabled={disabled}
               className="bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700"
             >
               <Check size={14} />
@@ -227,7 +213,7 @@ export function ToolApprovalInterrupt({
                 setShowRejectionInput(false);
                 setRejectionMessage("");
               }}
-              disabled={isLoading}
+              disabled={disabled}
             >
               Cancel
             </Button>
@@ -235,7 +221,7 @@ export function ToolApprovalInterrupt({
               variant="destructive"
               size="sm"
               onClick={handleRejectConfirm}
-              disabled={isLoading}
+              disabled={disabled}
             >
               {isLoading ? "Rejecting..." : "Confirm Reject"}
             </Button>
@@ -247,7 +233,7 @@ export function ToolApprovalInterrupt({
                 variant="outline"
                 size="sm"
                 onClick={handleReject}
-                disabled={isLoading}
+                disabled={disabled}
                 className="text-destructive hover:bg-destructive/10"
               >
                 <X size={14} />
@@ -259,7 +245,7 @@ export function ToolApprovalInterrupt({
                 variant="outline"
                 size="sm"
                 onClick={startEditing}
-                disabled={isLoading}
+                disabled={disabled}
               >
                 <Pencil size={14} />
                 Edit
@@ -269,7 +255,7 @@ export function ToolApprovalInterrupt({
               <Button
                 size="sm"
                 onClick={handleApprove}
-                disabled={isLoading}
+                disabled={disabled}
                 className={cn(
                   "bg-green-600 text-white hover:bg-green-700",
                   "dark:bg-green-600 dark:hover:bg-green-700"

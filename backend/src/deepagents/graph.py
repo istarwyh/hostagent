@@ -1,225 +1,147 @@
-from typing import Any, Callable, Optional, Sequence, Type, TypeVar, Union
+"""Deepagents come with planning, filesystem, and subagents."""
 
-from langchain_core.language_models import LanguageModelLike
-from langchain_core.tools import BaseTool, tool
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.prebuilt import create_react_agent
+from collections.abc import Callable, Sequence
+from typing import Any
+
+from langchain.agents import create_agent
+from langchain.agents.middleware import (
+    HumanInTheLoopMiddleware,
+    InterruptOnConfig,
+    TodoListMiddleware,
+)
+from langchain.agents.middleware.summarization import SummarizationMiddleware
+from langchain.agents.middleware.types import AgentMiddleware
+from langchain.agents.structured_output import ResponseFormat
+from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
+from langchain_core.language_models import BaseChatModel
+from langchain_core.tools import BaseTool
+from langgraph.cache.base import BaseCache
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer
 
-from deepagents.interrupt import ToolInterruptConfig, create_interrupt_hook
+from deepagents.middleware.audit import ToolAuditMiddleware
+from deepagents.middleware.filesystem import FilesystemMiddleware
+from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
+from deepagents.middleware.subagents import CompiledSubAgent, SubAgent, SubAgentMiddleware
 from deepagents.model import get_default_model
-from deepagents.prompts import BASE_AGENT_PROMPT
-from deepagents.state import DeepAgentState
-from deepagents.sub_agent import CustomSubAgent, SubAgent, _create_sync_task_tool, _create_task_tool
-from deepagents.tools import edit_file, ls, read_file, write_file, write_todos
-from src.util.logger import setup_logger
 
-StateSchema = TypeVar("StateSchema", bound=DeepAgentState)
-StateSchemaType = Type[StateSchema]
-logger = setup_logger(__name__)
-
-
-def _agent_builder(
-    tools: Sequence[Union[BaseTool, Callable, dict[str, Any]]],
-    instructions: str,
-    model: Optional[Union[str, LanguageModelLike]] = None,
-    subagents: list[SubAgent | CustomSubAgent] = None,
-    state_schema: Optional[StateSchemaType] = None,
-    builtin_tools: Optional[list[str]] = None,
-    interrupt_config: Optional[ToolInterruptConfig] = None,
-    config_schema: Optional[Type[Any]] = None,
-    checkpointer: Optional[Checkpointer] = None,
-    post_model_hook: Optional[Callable] = None,
-    main_agent_tools: Optional[list[str]] = None,
-    is_async: bool = False,
-):
-    logger.info("_agent_builder called with model=%s", model)
-    logger.info("Building agent with instructions: %s", instructions[:100])
-    prompt = instructions + BASE_AGENT_PROMPT
-
-    all_builtin_tools = [write_todos, write_file, read_file, ls, edit_file]
-
-    if builtin_tools is not None:
-        tools_by_name = {}
-        for tool_ in all_builtin_tools:
-            if not isinstance(tool_, BaseTool):
-                tool_ = tool(tool_)
-            tools_by_name[tool_.name] = tool_
-        # Only include built-in tools whose names are in the specified list
-        built_in_tools = [tools_by_name[_tool] for _tool in builtin_tools]
-    else:
-        built_in_tools = all_builtin_tools
-
-    if model is None:
-        logger.info("No model specified, using default model")
-        model = get_default_model()
-    state_schema = state_schema or DeepAgentState
-
-    # Should never be the case that both are specified
-    if post_model_hook and interrupt_config:
-        raise ValueError(
-            "Cannot specify both post_model_hook and interrupt_config together. "
-            "Use either interrupt_config for tool interrupts or post_model_hook for custom post-processing."
-        )
-    elif post_model_hook is not None:
-        selected_post_model_hook = post_model_hook
-    elif interrupt_config is not None:
-        selected_post_model_hook = create_interrupt_hook(interrupt_config)
-    else:
-        selected_post_model_hook = None
-
-    if not is_async:
-        task_tool = _create_sync_task_tool(
-            list(tools) + built_in_tools,
-            BASE_AGENT_PROMPT,
-            subagents or [],
-            model,
-            state_schema,
-            selected_post_model_hook,
-        )
-    else:
-        task_tool = _create_task_tool(
-            list(tools) + built_in_tools,
-            BASE_AGENT_PROMPT,
-            subagents or [],
-            model,
-            state_schema,
-            selected_post_model_hook,
-        )
-    if main_agent_tools is not None:
-        passed_in_tools = []
-        for tool_ in tools:
-            if not isinstance(tool_, BaseTool):
-                tool_ = tool(tool_)
-            if tool_.name in main_agent_tools:
-                passed_in_tools.append(tool_)
-    else:
-        passed_in_tools = list(tools)
-    all_tools = built_in_tools + passed_in_tools + [task_tool]
-
-    if not checkpointer:
-        checkpointer = MemorySaver()
-
-    return create_react_agent(
-        model,
-        prompt=prompt,
-        tools=all_tools,
-        state_schema=state_schema,
-        post_model_hook=selected_post_model_hook,
-        config_schema=config_schema,
-        checkpointer=checkpointer,
-    )
+BASE_AGENT_PROMPT = "In order to complete the objective that the user asks of you, you have access to a number of standard tools."
 
 
 def create_deep_agent(
-    tools: Sequence[Union[BaseTool, Callable, dict[str, Any]]],
-    instructions: str,
-    model: Optional[Union[str, LanguageModelLike]] = None,
-    subagents: list[SubAgent | CustomSubAgent] = None,
-    state_schema: Optional[StateSchemaType] = None,
-    builtin_tools: Optional[list[str]] = None,
-    interrupt_config: Optional[ToolInterruptConfig] = None,
-    config_schema: Optional[Type[Any]] = None,
-    checkpointer: Optional[Checkpointer] = None,
-    post_model_hook: Optional[Callable] = None,
-    main_agent_tools: Optional[list[str]] = None,
-):
+    model: str | BaseChatModel | None = None,
+    tools: Sequence[BaseTool | Callable | dict[str, Any]] | None = None,
+    *,
+    system_prompt: str | None = None,
+    middleware: Sequence[AgentMiddleware] = (),
+    subagents: list[SubAgent | CompiledSubAgent] | None = None,
+    response_format: ResponseFormat | None = None,
+    context_schema: type[Any] | None = None,
+    checkpointer: Checkpointer | None = None,
+    store: BaseStore | None = None,
+    use_longterm_memory: bool = False,
+    interrupt_on: dict[str, bool | InterruptOnConfig] | None = None,
+    debug: bool = False,
+    name: str | None = None,
+    cache: BaseCache | None = None,
+    audit_dir: str | None = None,
+) -> CompiledStateGraph:
     """Create a deep agent.
 
     This agent will by default have access to a tool to write todos (write_todos),
-    and then four file editing tools: write_file, ls, read_file, edit_file.
+    four file editing tools: write_file, ls, read_file, edit_file, and a tool to call
+    subagents.
 
     Args:
-        tools: The additional tools the agent should have access to.
-        instructions: The additional instructions the agent should have. Will go in
+        tools: The tools the agent should have access to.
+        system_prompt: The additional instructions the agent should have. Will go in
             the system prompt.
+        middleware: Additional middleware to apply after standard middleware.
         model: The model to use.
         subagents: The subagents to use. Each subagent should be a dictionary with the
             following keys:
                 - `name`
-                - `description` (used by the main agent to decide whether to call the sub agent)
+                - `description` (used by the main agent to decide whether to call the
+                  sub agent)
                 - `prompt` (used as the system prompt in the subagent)
                 - (optional) `tools`
-                - (optional) `model` (either a LanguageModelLike instance or dict settings)
-        state_schema: The schema of the deep agent. Should subclass from DeepAgentState
-        builtin_tools: If not provided, all built-in tools are included. If provided,
-            only the specified built-in tools are included.
-        interrupt_config: Optional Dict[str, HumanInterruptConfig] mapping tool names to interrupt configs.
-        config_schema: The schema of the deep agent.
-        post_model_hook: Custom post model hook
+                - (optional) `model` (either a LanguageModelLike instance or dict
+                  settings)
+                - (optional) `middleware` (list of AgentMiddleware)
+        response_format: A structured output response format to use for the agent.
+        context_schema: The schema of the deep agent.
         checkpointer: Optional checkpointer for persisting agent state between runs.
-        main_agent_tools: Optional list of tool names that the main agent should have. If not provided,
-            will have access to all tools. Note that built-in tools (for filesystem and todo and subagents) are
-            always included - this filtering only applies to passed in tools.
+        store: Optional store for persisting longterm memories.
+        use_longterm_memory: Whether to use longterm memory - you must provide a store
+            in order to use longterm memory.
+        interrupt_on: Optional Dict[str, bool | InterruptOnConfig] mapping tool names to
+            interrupt configs.
+        debug: Whether to enable debug mode. Passed through to create_agent.
+        name: The name of the agent. Passed through to create_agent.
+        cache: The cache to use for the agent. Passed through to create_agent.
+        audit_dir: Optional local directory for per-tool audit records (including subagents).
+
+    Returns:
+        A configured deep agent.
     """
-    return _agent_builder(
+    if model is None:
+        model = get_default_model()
+
+    deepagent_middleware = [
+        TodoListMiddleware(),
+        FilesystemMiddleware(
+            long_term_memory=use_longterm_memory,
+        ),
+        SubAgentMiddleware(
+            default_model=model,
+            default_tools=tools,
+            subagents=subagents if subagents is not None else [],
+            default_middleware=[
+                TodoListMiddleware(),
+                FilesystemMiddleware(
+                    long_term_memory=use_longterm_memory,
+                ),
+                SummarizationMiddleware(
+                    model=model,
+                    trigger=("tokens", 170000),
+                    keep=("messages", 6),
+                ),
+                AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+                PatchToolCallsMiddleware(),
+                *([ToolAuditMiddleware(audit_dir)] if audit_dir is not None else []),
+            ],
+            default_interrupt_on=interrupt_on,
+            general_purpose_agent=True,
+        ),
+        SummarizationMiddleware(
+            model=model,
+            trigger=("tokens", 170000),
+            keep=("messages", 6),
+        ),
+        AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+        PatchToolCallsMiddleware(),
+    ]
+    if interrupt_on is not None:
+        deepagent_middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
+    if middleware is not None:
+        deepagent_middleware.extend(middleware)
+
+    if audit_dir is not None:
+        deepagent_middleware.append(ToolAuditMiddleware(audit_dir))
+
+    return create_agent(
+        model,
+        system_prompt=(
+            system_prompt + "\n\n" + BASE_AGENT_PROMPT if system_prompt else BASE_AGENT_PROMPT
+        ),
         tools=tools,
-        instructions=instructions,
-        model=model,
-        subagents=subagents,
-        state_schema=state_schema,
-        builtin_tools=builtin_tools,
-        interrupt_config=interrupt_config,
-        config_schema=config_schema,
+        middleware=deepagent_middleware,
+        response_format=response_format,
+        context_schema=context_schema,
         checkpointer=checkpointer,
-        post_model_hook=post_model_hook,
-        main_agent_tools=main_agent_tools,
-        is_async=False,
-    )
-
-
-def async_create_deep_agent(
-    tools: Sequence[Union[BaseTool, Callable, dict[str, Any]]],
-    instructions: str,
-    model: Optional[Union[str, LanguageModelLike]] = None,
-    subagents: list[SubAgent | CustomSubAgent] = None,
-    state_schema: Optional[StateSchemaType] = None,
-    builtin_tools: Optional[list[str]] = None,
-    interrupt_config: Optional[ToolInterruptConfig] = None,
-    config_schema: Optional[Type[Any]] = None,
-    checkpointer: Optional[Checkpointer] = None,
-    post_model_hook: Optional[Callable] = None,
-    main_agent_tools: Optional[list[str]] = None,
-):
-    """Create a deep agent.
-
-    This agent will by default have access to a tool to write todos (write_todos),
-    and then four file editing tools: write_file, ls, read_file, edit_file.
-
-    Args:
-        tools: The additional tools the agent should have access to.
-        instructions: The additional instructions the agent should have. Will go in
-            the system prompt.
-        model: The model to use.
-        subagents: The subagents to use. Each subagent should be a dictionary with the
-            following keys:
-                - `name`
-                - `description` (used by the main agent to decide whether to call the sub agent)
-                - `prompt` (used as the system prompt in the subagent)
-                - (optional) `tools`
-                - (optional) `model` (either a LanguageModelLike instance or dict settings)
-        state_schema: The schema of the deep agent. Should subclass from DeepAgentState
-        builtin_tools: If not provided, all built-in tools are included. If provided,
-            only the specified built-in tools are included.
-        interrupt_config: Optional Dict[str, HumanInterruptConfig] mapping tool names to interrupt configs.
-        config_schema: The schema of the deep agent.
-        post_model_hook: Custom post model hook
-        checkpointer: Optional checkpointer for persisting agent state between runs.
-        main_agent_tools: Optional list of tool names that the main agent should have. If not provided,
-            will have access to all tools. Note that built-in tools (for filesystem and todo and subagents) are
-            always included - this filtering only applies to passed in tools.
-    """
-    return _agent_builder(
-        tools=tools,
-        instructions=instructions,
-        model=model,
-        subagents=subagents,
-        state_schema=state_schema,
-        builtin_tools=builtin_tools,
-        interrupt_config=interrupt_config,
-        config_schema=config_schema,
-        checkpointer=checkpointer,
-        post_model_hook=post_model_hook,
-        main_agent_tools=main_agent_tools,
-        is_async=True,
-    )
+        store=store,
+        debug=debug,
+        name=name,
+        cache=cache,
+    ).with_config({"recursion_limit": 1000})

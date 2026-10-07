@@ -16,19 +16,23 @@ Supports all SDK StreamMode types:
 
 import json
 from enum import Enum
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional, cast
 from uuid import uuid4
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command
+from langgraph.types import StreamMode as LangGraphStreamMode
 
 from src.app.agent_initializer import agent_pool
 from src.repository.checkpointer import checkpointer
+from src.service.langgraph_api.serialization import json_safe, normalize_input, serialize_state
 from src.util.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 # SDK StreamMode to LangGraph agent stream_mode mapping
-STREAM_MODE_MAPPING = {
+STREAM_MODE_MAPPING: dict[str, LangGraphStreamMode] = {
     "values": "values",
     "messages": "messages",
     "messages-tuple": "messages",
@@ -43,7 +47,7 @@ STREAM_MODE_MAPPING = {
 
 def format_sse_event(event_type: str, data: Any) -> str:
     """Format data as SSE event."""
-    json_data = json.dumps(data, default=str)
+    json_data = json.dumps(json_safe(data))
     return f"event: {event_type}\ndata: {json_data}\n\n"
 
 
@@ -75,19 +79,6 @@ def _serialize_message(msg: Any) -> dict:
         "response_metadata": getattr(msg, "response_metadata", {}),
         "tool_calls": getattr(msg, "tool_calls", []),
     }
-
-
-def serialize_state(state: dict) -> dict:
-    """Serialize agent state to JSON-compatible dict."""
-    result = {}
-    for key, value in state.items():
-        if key == "messages" and isinstance(value, list):
-            result[key] = [_serialize_message(m) for m in value]
-        elif hasattr(value, "model_dump"):
-            result[key] = value.model_dump()
-        else:
-            result[key] = value
-    return result
 
 
 def _build_checkpoint_event_data(
@@ -140,7 +131,7 @@ def _build_tasks_event_data(
     - TasksStreamResultEvent: { id, name, interrupts, result: [string, UpdateType][] }
     - TasksStreamErrorEvent: { id, name, interrupts, error }
     """
-    base = {
+    base: dict[str, Any] = {
         "id": task_id,
         "name": node_name,
         "interrupts": [],
@@ -238,6 +229,9 @@ async def execute_stream_run(
     stream_subgraphs: bool = False,
     config: Optional[dict] = None,
     agent: Optional[CompiledStateGraph] = None,
+    command: Optional[dict] = None,
+    interrupt_before: Optional[list[str]] = None,
+    interrupt_after: Optional[list[str]] = None,
 ) -> AsyncIterator[str]:
     """
     Execute a streaming run and yield SSE events.
@@ -272,7 +266,7 @@ async def execute_stream_run(
         if agent is None:
             agent = agent_pool.get_agent(assistant_id)
 
-        run_config = dict(config or {})
+        run_config = cast(RunnableConfig, dict(config or {}))
         run_config["configurable"] = {
             **run_config.get("configurable", {}),
             "thread_id": thread_id,
@@ -292,11 +286,20 @@ async def execute_stream_run(
 
         # 透传多个 agent stream_mode，按 (agent_mode, chunk) / (namespace, agent_mode, chunk)
         # 逐个映射为 SDK 事件
+        graph_input: dict | Command | None = normalize_input(input_data)
+        if command is not None:
+            command = dict(command)
+            if "update" in command:
+                command["update"] = normalize_input(command["update"])
+            graph_input = Command(**command)
+
         async for agent_chunk in agent.astream(
-            input_data or {},
+            graph_input,
             config=run_config,
             stream_mode=agent_modes,
             subgraphs=stream_subgraphs,
+            interrupt_before=interrupt_before,
+            interrupt_after=interrupt_after,
         ):
             agent_mode: str
             chunk: Any

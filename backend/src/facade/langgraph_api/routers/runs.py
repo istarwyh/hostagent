@@ -38,6 +38,9 @@ async def stream_run(request: RunStreamRequest):
             stream_subgraphs=request.stream_subgraphs,
             config=run_config,
             agent=agent,
+            command=request.command.model_dump(exclude_unset=True) if request.command else None,
+            interrupt_before=request.interrupt_before,
+            interrupt_after=request.interrupt_after,
         ):
             yield event
 

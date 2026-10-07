@@ -22,6 +22,7 @@ from src.model.thread import (
 )
 from src.repository.checkpointer import checkpointer
 from src.service.langgraph_api.run_service import execute_stream_run
+from src.service.langgraph_api.serialization import serialize_snapshot, serialize_state
 from src.util.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -29,140 +30,20 @@ router = APIRouter(prefix="/threads", tags=["threads"])
 
 # In-memory thread registry
 _threads: dict[str, Thread] = {}
-
-
-def _serialize_message(msg: Any) -> dict:
-    """Serialize a LangChain message to dict."""
-    if hasattr(msg, "model_dump"):
-        return msg.model_dump()
-    if hasattr(msg, "dict"):
-        return msg.dict()
-    if isinstance(msg, dict):
-        return msg
-    return {
-        "type": getattr(msg, "type", "unknown"),
-        "content": getattr(msg, "content", str(msg)),
-        "id": getattr(msg, "id", str(uuid4())),
-        "additional_kwargs": getattr(msg, "additional_kwargs", {}),
-        "response_metadata": getattr(msg, "response_metadata", {}),
-    }
-
-
-def _is_message(obj: Any) -> bool:
-    """Check if an object is a LangChain message."""
-    return hasattr(obj, "content") or (isinstance(obj, dict) and "content" in obj)
-
-
-def _json_safe(value: Any) -> Any:
-    """Best-effort conversion of arbitrary objects to JSON-serializable values.
-
-    - Pydantic / dataclass-like objects: use model_dump()/dict()
-    - dict / list / tuple / set: recurse
-    - primitives: return as-is
-    - others: fallback to str()
-    """
-    # Primitive types
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-
-    # Pydantic / dataclass-like
-    if hasattr(value, "model_dump"):
-        try:
-            return _json_safe(value.model_dump())
-        except Exception:
-            return str(value)
-    if hasattr(value, "dict") and not isinstance(value, dict):
-        try:
-            return _json_safe(value.dict())
-        except Exception:
-            return str(value)
-
-    # Mapping types
-    if isinstance(value, dict):
-        return {str(k): _json_safe(v) for k, v in value.items()}
-
-    # Sequence types
-    if isinstance(value, (list, tuple, set)):
-        return [_json_safe(v) for v in value]
-
-    # Fallback
-    return str(value)
+# In-memory checkpointer lifetime matches these compiled graph bindings.
+_thread_agents: dict[str, Any] = {}
 
 
 def _extract_values_from_checkpoint(checkpoint: dict) -> dict:
-    """
-    Extract state values (messages, todos, files, etc.) from a checkpoint.
-
-    约定：
-    - values.messages: 会话消息列表
-    - values.todos: DeepAgentState.todos 列表
-    - values.files: DeepAgentState.files 映射 {path: content}
-
-    之前的实现按 value 遍历 channel_values，无法区分 channel 名：
-    - todos 被当成 messages 合并进 messages 数组
-    - files 的内容按 key 展开成顶层字段，而不是挂在 values.files
-    """
-    values: dict = {}
-    channel_values = checkpoint.get("channel_values", {}) or {}
-
-    for channel_name, node_data in channel_values.items():
-        # 1) 显式处理 todos 通道 → values.todos
-        if channel_name == "todos":
-            if isinstance(node_data, list):
-                flat: list[Any] = []
-                for item in node_data:
-                    if isinstance(item, list):
-                        flat.extend(item)
-                    else:
-                        flat.append(item)
-                values["todos"] = _json_safe(flat)
-            else:
-                values["todos"] = [_json_safe(node_data)]
-            continue
-
-        # 2) 显式处理 files 通道 → values.files
-        if channel_name == "files":
-            # DeepAgentState.files: dict[str, str]
-            if isinstance(node_data, dict):
-                # 前端期望 Record<string, string>
-                values["files"] = {str(k): str(v) for k, v in node_data.items()}
-            else:
-                # 兜底：非 dict 形式时直接挂到 files，前端会做字符串化处理
-                values["files"] = str(node_data)
-            continue
-
-        # 3) 处理包含 messages 的通道 → values.messages
-        if isinstance(node_data, dict):
-            if "messages" in node_data:
-                serialized = [_json_safe(_serialize_message(m)) for m in node_data["messages"]]
-                values.setdefault("messages", []).extend(serialized)
-
-            # 其他字段（非 messages / todos / files）原样挂载
-            for key, val in node_data.items():
-                if key not in {"messages", "todos", "files"}:
-                    values[key] = _json_safe(val)
-            continue
-
-        # 4) list-of-messages 通道（兼容旧形态）
-        if isinstance(node_data, list):
-            flat = []
-            for item in node_data:
-                if isinstance(item, list):
-                    flat.extend(item)
-                else:
-                    flat.append(item)
-            if flat and _is_message(flat[0]):
-                serialized = [_json_safe(_serialize_message(m)) for m in flat]
-                values.setdefault("messages", []).extend(serialized)
-            else:
-                # 非消息列表，挂到对应 channel 名下
-                values[channel_name] = _json_safe(node_data)
-            continue
-
-        # 5) 其他标量/对象通道，直接挂到 values[channel_name]
-        values[channel_name] = _json_safe(node_data)
-
-    return values
+    """Keep v1 channel names; never flatten custom dict state or internal channels."""
+    channels = checkpoint.get("channel_values", {}) or {}
+    return serialize_state(
+        {
+            key: value
+            for key, value in channels.items()
+            if not key.startswith(("__", "branch:", "start:"))
+        }
+    )
 
 
 @router.post("")
@@ -259,6 +140,7 @@ async def delete_thread(thread_id: str):
     """Delete a thread."""
     if thread_id in _threads:
         del _threads[thread_id]
+        _thread_agents.pop(thread_id, None)
         logger.info(f"Deleted thread: {thread_id}")
         return {"status": "deleted", "thread_id": thread_id}
 
@@ -275,6 +157,8 @@ async def get_thread_state(thread_id: str, checkpoint_id: Optional[str] = None):
         config["configurable"]["checkpoint_id"] = checkpoint_id
 
     try:
+        if thread_id in _thread_agents:
+            return serialize_snapshot(await _thread_agents[thread_id].aget_state(config))
         tuples = list(checkpointer.list(config, limit=1))
         if not tuples:
             return ThreadState(
@@ -323,6 +207,15 @@ async def get_thread_history(
     limit = request.limit if request else 10
 
     try:
+        if thread_id in _thread_agents:
+            config = {"configurable": {"thread_id": thread_id}}
+            return [
+                serialize_snapshot(snapshot)
+                async for snapshot in _thread_agents[thread_id].aget_state_history(
+                    config, limit=limit
+                )
+            ]
+
         tuples = list(
             checkpointer.list(
                 {"configurable": {"thread_id": thread_id}},
@@ -336,11 +229,11 @@ async def get_thread_history(
         # Group by step, keep checkpoint with most messages
         grouped: dict[int, list] = {}
         for t in tuples:
-            metadata = t.metadata or {}
+            step_metadata = t.metadata or {}
             step = (
-                getattr(metadata, "step", 0)
-                if hasattr(metadata, "step")
-                else metadata.get("step", 0)
+                getattr(step_metadata, "step", 0)
+                if hasattr(step_metadata, "step")
+                else step_metadata.get("step", 0)
             )
             grouped.setdefault(step, []).append(t)
 
@@ -421,6 +314,18 @@ async def stream_run(thread_id: str, request: RunStreamRequest):
     logger.info(f"Starting stream run for thread: {thread_id}")
 
     agent, run_config = await prepare_run_agent(request.assistant_id, request.config)
+    if request.checkpoint:
+        checkpoint = request.checkpoint
+        if checkpoint.get("thread_id", thread_id) != thread_id:
+            raise HTTPException(status_code=422, detail="Checkpoint belongs to another thread")
+        run_config["configurable"].update(
+            {
+                key: checkpoint[key]
+                for key in ("checkpoint_id", "checkpoint_ns")
+                if key in checkpoint
+            }
+        )
+    _thread_agents[thread_id] = agent
     # Ensure thread exists
     if thread_id not in _threads:
         _threads[thread_id] = Thread(
@@ -439,6 +344,9 @@ async def stream_run(thread_id: str, request: RunStreamRequest):
             stream_subgraphs=request.stream_subgraphs,
             config=run_config,
             agent=agent,
+            command=request.command.model_dump(exclude_unset=True) if request.command else None,
+            interrupt_before=request.interrupt_before,
+            interrupt_after=request.interrupt_after,
         ):
             yield event
 
