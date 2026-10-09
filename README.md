@@ -1,7 +1,42 @@
+# HostAgent experiment
+
+This repository runs as a complete monorepo: `backend/` contains the LangChain v1
+agent framework and API; `frontend/` contains the Next.js client. Independent
+Python-package distribution is not a project requirement.
+
+## Run the application
+
+```bash
+cd backend
+uv venv
+uv pip install -e ".[dev]"
+.venv/bin/python -m uvicorn src.facade.langgraph_api.main:app --port 2024
+```
+
+In another terminal:
+
+```bash
+cd frontend
+yarn install --frozen-lockfile
+yarn dev
+```
+
+Open http://localhost:3000 and choose deployment URL http://localhost:2024 and
+assistant `researchAgent`. Discovery and thread management work without API keys.
+For real research, configure the selected model provider and `TAVILY_API_KEY` in
+`backend/.env`; a run with no model credentials returns HTTP 503 before streaming.
+See [backend setup](backend/README.md) for validation and migration details.
+
+The framework below follows upstream `master` (8907f04), using `create_agent` and
+middleware. It retains the experiment's provider selection, lazy agent registry,
+API, frontend and optional per-tool auditing.
+
+---
+
 # 🧠🤖Deep Agents
 
-Using an LLM to call tools in a loop is the simplest form of an agent. 
-This architecture, however, can yield agents that are “shallow” and fail to plan and act over longer, more complex tasks. 
+Using an LLM to call tools in a loop is the simplest form of an agent.
+This architecture, however, can yield agents that are “shallow” and fail to plan and act over longer, more complex tasks.
 
 Applications like “Deep Research”, "Manus", and “Claude Code” have gotten around this limitation by implementing a combination of four things:
 a **planning tool**, **sub agents**, access to a **file system**, and a **detailed prompt**.
@@ -110,7 +145,7 @@ from langchain.chat_models import init_chat_model
 from deepagents import create_deep_agent
 
 model = init_chat_model(
-    model="openai:gpt-5",  
+    model="openai:gpt-5",
 )
 agent = create_deep_agent(
     model=model,
@@ -166,7 +201,7 @@ agent = create_deep_agent(
 ```
 
 ### `middleware`
-`create_deep_agent` is implemented with middleware that can be customized. You can provide additional middleware to extend functionality, add tools, or implement custom hooks. 
+`create_deep_agent` is implemented with middleware that can be customized. You can provide additional middleware to extend functionality, add tools, or implement custom hooks.
 
 ```python
 from langchain_core.tools import tool
@@ -225,7 +260,7 @@ class CompiledSubAgent(TypedDict):
 
 **CompiledSubAgent fields:**
 - **name**: This is the name of the subagent, and how the main agent will call the subagent
-- **description**: This is the description of the subagent that is shown to the main agent  
+- **description**: This is the description of the subagent that is shown to the main agent
 - **runnable**: A pre-built LangGraph graph/agent that will be used as the subagent
 
 #### Using SubAgent
@@ -472,7 +507,7 @@ agent = create_agent(
 
 ## Sync vs Async
 
-Prior versions of deepagents separated sync and async agent factories. 
+Prior versions of deepagents separated sync and async agent factories.
 
 `async_create_deep_agent` has been folded in to `create_deep_agent`.
 

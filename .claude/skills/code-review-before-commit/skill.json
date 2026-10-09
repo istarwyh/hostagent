@@ -1,0 +1,5 @@
+{
+  "name": "code-review-before-commit",
+  "description": "Review all uncommitted changes before commit, checking code quality, test coverage, and documentation",
+  "version": "1.0.0"
+}
