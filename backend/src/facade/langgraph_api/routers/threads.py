@@ -175,8 +175,10 @@ async def get_thread_state(thread_id: str, checkpoint_id: Optional[str] = None):
             values=values,
             next=[],
             checkpoint_id=latest.checkpoint.get("id"),
+            checkpoint=(latest.config or {}).get("configurable", {}),
+            parent_checkpoint=(latest.parent_config or {}).get("configurable"),
             created_at=latest.checkpoint.get("ts"),
-            metadata={"thread_id": thread_id},
+            metadata={**(latest.metadata or {}), "thread_id": thread_id},
         ).model_dump()
     except Exception as e:
         logger.error(f"Failed to get thread state: {e}", exc_info=True)
@@ -238,7 +240,7 @@ async def get_thread_history(
             grouped.setdefault(step, []).append(t)
 
         history: list[dict[str, Any]] = []
-        for step in sorted(grouped.keys()):
+        for step in sorted(grouped.keys(), reverse=True):
             candidates = grouped[step]
             best = max(
                 candidates,

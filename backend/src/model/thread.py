@@ -23,6 +23,9 @@ class ThreadState(BaseModel):
     values: dict = Field(default_factory=dict)
     next: list[str] = Field(default_factory=list)
     checkpoint_id: Optional[str] = None
+    checkpoint: Optional[dict] = None
+    parent_checkpoint: Optional[dict] = None
+    tasks: list[dict] = Field(default_factory=list)
     created_at: Optional[datetime] = None
     metadata: dict = Field(default_factory=dict)
 

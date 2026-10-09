@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +12,8 @@ from langchain_core.tools import BaseTool
 from langgraph.prebuilt import ToolNode
 
 from deepagents.workspace_dir import get_workspace_dir_name
+
+_summary_lock = threading.Lock()
 
 
 class SimpleAuditToolNode(ToolNode):
@@ -154,8 +157,9 @@ class SimpleAuditToolNode(ToolNode):
 
         # 同时追加到当天的汇总日志
         summary_file = f"{filepath.parent}/summary_{datetime.now().strftime('%Y%m%d')}.jsonl"
-        with open(summary_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(audit_record, ensure_ascii=False, default=str) + "\n")
+        with _summary_lock:
+            with open(summary_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(audit_record, ensure_ascii=False, default=str) + "\n")
 
         return str(filepath)
 

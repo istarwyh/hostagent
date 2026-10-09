@@ -9,13 +9,13 @@ import pytest
 from fastapi.testclient import TestClient
 from langchain.tools import ToolRuntime
 from langchain_core.messages import AIMessage
+from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 
 from deepagents.audit_tool_node import SimpleAuditToolNode
 from deepagents.middleware.subagents import _create_task_tool
-from deepagents.model import get_default_model
 from deepagents.state import DeepAgentState
 from src.app.agent_config import AgentConfig
 from src.app.agent_initializer import agent_pool, registry
@@ -281,9 +281,8 @@ def test_failing_tool_preserves_original_error_and_writes_audit(tmp_path, is_asy
     assert "deliberate-tool-failure" in str(audit)
 
 
-def test_async_subagent_runs_an_async_only_graph(monkeypatch):
+def test_async_subagent_runs_an_async_only_graph():
     """An async graph requires ainvoke; invoke cannot execute its node."""
-    monkeypatch.setenv("OPENAI_API_KEY", "inspection-placeholder")
 
     async def respond(state):
         return {"messages": [AIMessage(content="Local subagent completed")]}
@@ -295,7 +294,7 @@ def test_async_subagent_runs_an_async_only_graph(monkeypatch):
     task = _create_task_tool(
         default_tools=[],
         subagents=[{"name": "local", "description": "local graph", "runnable": graph.compile()}],
-        default_model=get_default_model(),
+        default_model=FakeListChatModel(responses=["unused"]),
         default_middleware=[],
         default_interrupt_on=None,
         general_purpose_agent=False,

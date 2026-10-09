@@ -81,7 +81,7 @@ async def create_assistant(request: AssistantCreateRequest):
         graph_id=request.graph_id,
         name=request.name or f"Assistant-{assistant_id[:8]}",
         config=request.config,
-        metadata=AssistantMetadata(**{"created_by": "user", **request.metadata}),
+        metadata=AssistantMetadata(**{**request.metadata, "created_by": "user"}),
     )
 
     user_assistants[assistant_id] = assistant
@@ -115,7 +115,8 @@ async def update_assistant(assistant_id: str, request: AssistantUpdateRequest):
         assistant.config.update(request.config)
     if request.metadata is not None:
         for key, value in request.metadata.items():
-            setattr(assistant.metadata, key, value)
+            if key != "created_by":
+                setattr(assistant.metadata, key, value)
 
     assistant.updated_at = datetime.utcnow()
     logger.info(f"Updated user assistant: {assistant_id}")

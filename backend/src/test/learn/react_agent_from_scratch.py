@@ -14,6 +14,7 @@ from __future__ import annotations
 import getpass
 import json
 import os
+import sys
 from typing import Annotated, Sequence, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
@@ -28,6 +29,8 @@ from langgraph.graph.message import add_messages
 
 def _set_env(var: str) -> None:
     if not os.environ.get(var):
+        if not sys.stdin.isatty():
+            raise RuntimeError(f"Environment variable {var} not set and no TTY available for input")
         # Prompt only in interactive terminals
         try:
             os.environ[var] = getpass.getpass(f"{var}: ")
